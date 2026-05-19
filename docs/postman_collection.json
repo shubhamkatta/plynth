@@ -1,0 +1,814 @@
+{
+  "info": {
+    "name": "Product Platform API",
+    "description": "Reusable multi-product / multi-tenant SaaS platform API. Set `baseUrl`, `productSlug`, and `platformAdminToken` in the collection variables (or environment) before running. Auth flow: run **Admin → Create Product** (once) → **Auth → Register** or **Auth → Login** — the test scripts auto-populate `accessToken` + `refreshToken`. For parent → child workflows, run **Tenants → List Children** to populate `actingTenantSlug`, then any request that adds `X-Acting-Tenant-Slug: {{actingTenantSlug}}` scopes to the child.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "8c0c2a90-platform-scaffold-001"
+  },
+  "variable": [
+    { "key": "baseUrl",             "value": "http://localhost:8000", "type": "string" },
+    { "key": "productSlug",         "value": "platform",              "type": "string" },
+    { "key": "platformAdminToken",  "value": "change-me-platform-admin-token", "type": "string" },
+    { "key": "accessToken",         "value": "",                      "type": "string" },
+    { "key": "refreshToken",        "value": "",                      "type": "string" },
+    { "key": "tenantId",            "value": "",                      "type": "string" },
+    { "key": "userId",              "value": "",                      "type": "string" },
+    { "key": "roleId",              "value": "",                      "type": "string" },
+    { "key": "actingTenantSlug",    "value": "",                      "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Meta",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/ready", "host": ["{{baseUrl}}"], "path": ["ready"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin (Platform)",
+      "description": "Platform-admin endpoints. Authenticated via `X-Platform-Admin-Token` only — no product context required. These sit *above* products.",
+      "auth": { "type": "noauth" },
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Platform-Admin-Token", "value": "{{platformAdminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/products",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "products"]
+            }
+          }
+        },
+        {
+          "name": "Create Product",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.slug) pm.collectionVariables.set('productSlug', json.slug);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Platform-Admin-Token", "value": "{{platformAdminToken}}" },
+              { "key": "Content-Type",           "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Product\",\n  \"slug\": \"my-product\",\n  \"description\": \"Brand new product\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/products",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "admin", "products"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Public auth flows. Each request below sends `X-Product-Slug` (required for register / login). Authenticated routes also send the bearer token via the collection-level auth.",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('accessToken',  json.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_name\": \"Acme Inc\",\n  \"tenant_slug\": \"acme\",\n  \"email\": \"owner@acme.example.com\",\n  \"password\": \"S3cretPassword!\",\n  \"full_name\": \"Alice Owner\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('accessToken',  json.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@acme.example.com\",\n  \"password\": \"S3cretPassword!\",\n  \"tenant_slug\": \"acme\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('accessToken',  json.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout (this session)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\",\n  \"all_sessions\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Logout (all sessions)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"all_sessions\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"S3cretPassword!\",\n  \"new_password\": \"BrandNewPwd99!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/password",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "password"]
+            }
+          }
+        },
+        {
+          "name": "Me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id)        pm.collectionVariables.set('userId',   json.id);",
+                  "if (json.tenant_id) pm.collectionVariables.set('tenantId', json.tenant_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenants",
+      "item": [
+        {
+          "name": "List Tenants",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "tenants"]
+            }
+          }
+        },
+        {
+          "name": "List Children (Act-As picker)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = pm.response.json();",
+                  "const first = rows.find(r => r.can_act_as);",
+                  "if (first) pm.collectionVariables.set('actingTenantSlug', first.slug);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants/children",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "tenants", "children"]
+            },
+            "description": "Lists direct children of the caller's home tenant with a `can_act_as` flag and a `reason` when false. Auto-stores the first switchable child's slug in `actingTenantSlug`."
+          }
+        },
+        {
+          "name": "Create Child Tenant",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme East\",\n  \"slug\": \"acme-east\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "tenants"]
+            }
+          }
+        },
+        {
+          "name": "Update Tenant",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Renamed Tenant\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants/{{tenantId}}",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "tenants", "{{tenantId}}"]
+            }
+          }
+        },
+        {
+          "name": "Deactivate Tenant",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants/{{tenantId}}/deactivate",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "tenants", "{{tenantId}}", "deactivate"]
+            }
+          }
+        },
+        {
+          "name": "Activate Tenant",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants/{{tenantId}}/activate",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "tenants", "{{tenantId}}", "activate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "users"]
+            }
+          }
+        },
+        {
+          "name": "List Users (Acting as child)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Product-Slug",        "value": "{{productSlug}}" },
+              { "key": "X-Acting-Tenant-Slug",  "value": "{{actingTenantSlug}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "users"]
+            },
+            "description": "Identical to **List Users** but the request is scoped to the child tenant `{{actingTenantSlug}}`. Set the variable by running **Tenants → List Children** first, or hard-code it. Every endpoint accepts this header — copy the pattern wherever you need parent → child access."
+          }
+        },
+        {
+          "name": "Invite User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set('userId', json.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"new@acme.example.com\",\n  \"full_name\": \"New User\",\n  \"role_codes\": [\"member\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "users"]
+            }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Updated Name\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Activate User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}/activate",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "users", "{{userId}}", "activate"]
+            }
+          }
+        },
+        {
+          "name": "Deactivate User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}/deactivate",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "users", "{{userId}}", "deactivate"]
+            }
+          }
+        },
+        {
+          "name": "Delete User (soft)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles"]
+            }
+          }
+        },
+        {
+          "name": "List Permissions Catalog",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/permissions",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles", "permissions"]
+            }
+          }
+        },
+        {
+          "name": "Create Custom Role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set('roleId', json.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"auditor\",\n  \"description\": \"Read-only audit access\",\n  \"permission_codes\": [\"users:read\", \"audit:read\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles"]
+            }
+          }
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description\",\n  \"permission_codes\": [\"users:read\", \"audit:read\", \"credits:read\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/{{roleId}}",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles", "{{roleId}}"]
+            }
+          }
+        },
+        {
+          "name": "Assign Role to User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"role_id\": \"{{roleId}}\",\n  \"scope_tenant_id\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/assign",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "roles", "assign"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Plans",
+      "item": [
+        {
+          "name": "List Public Plans",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/plans",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "plans"]
+            }
+          }
+        },
+        {
+          "name": "Create Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"team\",\n  \"name\": \"Team\",\n  \"description\": \"Team plan\",\n  \"price_cents\": 4900,\n  \"currency\": \"USD\",\n  \"interval\": \"month\",\n  \"trial_days\": 14,\n  \"is_public\": true,\n  \"features\": [\n    { \"feature_key\": \"seats\",                  \"limit_value\": \"10\" },\n    { \"feature_key\": \"credits.ai_completion\", \"credit_amount\": \"5000\" }\n  ],\n  \"provider_refs\": { \"stripe\": \"price_xxx\" }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/plans",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "plans"]
+            }
+          }
+        },
+        {
+          "name": "Update Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Team (renamed)\",\n  \"price_cents\": 5900\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/plans/team",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "plans", "team"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscription",
+      "item": [
+        {
+          "name": "Get Subscription",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscription",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscription"]
+            }
+          }
+        },
+        {
+          "name": "Purchase Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug",   "value": "{{productSlug}}" },
+              { "key": "Idempotency-Key",  "value": "{{$guid}}" },
+              { "key": "Content-Type",     "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_code\": \"pro\",\n  \"payment_method_token\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscription/purchase",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscription", "purchase"]
+            }
+          }
+        },
+        {
+          "name": "Change Plan (upgrade / downgrade)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug",   "value": "{{productSlug}}" },
+              { "key": "Idempotency-Key",  "value": "{{$guid}}" },
+              { "key": "Content-Type",     "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_code\": \"free\",\n  \"proration\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscription/change",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscription", "change"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"at_period_end\": true,\n  \"reason\": \"trying something else\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/subscription/cancel",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "subscription", "cancel"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credits",
+      "item": [
+        {
+          "name": "List Wallets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credits/wallets",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "credits", "wallets"]
+            }
+          }
+        },
+        {
+          "name": "Ledger",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Product-Slug", "value": "{{productSlug}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credits/ledger?limit=100",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "credits", "ledger"],
+              "query": [{ "key": "limit", "value": "100" }]
+            }
+          }
+        },
+        {
+          "name": "Consume Credits",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"feature_key\": \"credits.ai_completion\",\n  \"amount\": \"1\",\n  \"reason\": \"completion request\",\n  \"reference\": \"req-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credits/consume",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "credits", "consume"]
+            }
+          }
+        },
+        {
+          "name": "Grant Credits (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"feature_key\": \"credits.ai_completion\",\n  \"amount\": \"500\",\n  \"reason\": \"promo grant\",\n  \"reference\": \"promo-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credits/grant",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "credits", "grant"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks (reference)",
+      "description": "Billing-provider webhooks. Real traffic comes from Stripe / etc. Use this folder to simulate against the mock provider during development.",
+      "item": [
+        {
+          "name": "Billing — invoice.payment_succeeded (mock)",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_mock_paid_1\",\n  \"type\": \"invoice.payment_succeeded\",\n  \"data\": {\n    \"id\": \"in_mock_1\",\n    \"subscription\": \"mock_sub_xxxxxx\",\n    \"amount_paid\": 2900,\n    \"currency\": \"usd\",\n    \"created\": 1718000000,\n    \"due_date\": 1718000000\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/webhooks/billing",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "webhooks", "billing"]
+            }
+          }
+        },
+        {
+          "name": "Billing — invoice.payment_failed (mock)",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_mock_fail_1\",\n  \"type\": \"invoice.payment_failed\",\n  \"data\": {\n    \"id\": \"in_mock_2\",\n    \"subscription\": \"mock_sub_xxxxxx\",\n    \"amount_due\": 2900,\n    \"currency\": \"usd\",\n    \"created\": 1718000000,\n    \"due_date\": 1718000000\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/webhooks/billing",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "webhooks", "billing"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

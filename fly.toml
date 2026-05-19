@@ -1,0 +1,75 @@
+# Fly.io deployment manifest.
+#
+# Two processes from a single image: the API (HTTP, scale-to-zero) and the
+# arq worker (always-on so cron jobs fire). See docs/deploy-fly.md.
+
+app = "product-platform"   # change to your unique app name (`fly apps create`)
+primary_region = "iad"     # change to your nearest: sjc, lhr, fra, sin, syd, …
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Runs in a one-shot machine using the same image + secrets before each
+  # deploy. Fails the deploy if migrations fail.
+  release_command = "alembic upgrade head"
+  strategy = "rolling"
+
+[env]
+  APP_ENV = "production"
+  APP_DEBUG = "false"
+  API_PORT = "8000"
+  # Real values via `fly secrets set` — never bake them into the image.
+
+# -----------------------------------------------------------------------------
+# Process types: each runs its own machines.
+# -----------------------------------------------------------------------------
+[processes]
+  # Single uvicorn worker keeps memory comfortably under 256 MB; scale
+  # horizontally by adding more machines rather than threads per machine.
+  api    = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers"
+  worker = "arq app.tasks.worker.WorkerSettings"
+
+# -----------------------------------------------------------------------------
+# API: public HTTP, suspends between requests for cheap idle cost.
+# -----------------------------------------------------------------------------
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "suspend"   # snapshot RAM; ~150 ms cold start
+  auto_start_machines = true
+  min_machines_running = 0          # zero idle cost
+  max_machines_running = 2          # cap to keep costs predictable
+  processes = ["api"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/ready"
+
+# -----------------------------------------------------------------------------
+# Worker: must be always-on so arq cron (grace-period sweep, reminders) fires.
+# -----------------------------------------------------------------------------
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  processes = ["api"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  processes = ["worker"]
+
+# Worker auto-scaling settings: keep one always running.
+[[services]]
+  internal_port = 0
+  processes = ["worker"]
+  auto_stop_machines = "off"
+  min_machines_running = 1

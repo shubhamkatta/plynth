@@ -34,6 +34,14 @@ class TenantStatus(str, enum.Enum):
     DELETED = "deleted"          # soft-deleted; do not allow auth
 
 
+class TenantType(str, enum.Enum):
+    """B2B vs B2C marker. Behavior is identical under the hood (tenant
+    is the billing / audit / RBAC boundary); product UIs use this to
+    render team-aware vs single-user flows."""
+    COMPANY = "company"
+    INDIVIDUAL = "individual"
+
+
 class Tenant(UUIDPKMixin, TimestampMixin, SoftDeleteMixin, ProductScopedMixin, Base):
     __tablename__ = "tenants"
     __table_args__ = (
@@ -47,11 +55,20 @@ class Tenant(UUIDPKMixin, TimestampMixin, SoftDeleteMixin, ProductScopedMixin, B
         default=TenantStatus.ACTIVE,
         nullable=False,
     )
+    type: Mapped[TenantType] = mapped_column(
+        Enum(TenantType, name="tenant_type"),
+        default=TenantType.COMPANY,
+        nullable=False,
+    )
     parent_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True
     )
     is_root: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    @property
+    def is_individual(self) -> bool:
+        return self.type == TenantType.INDIVIDUAL
 
     parent: Mapped["Tenant | None"] = relationship(
         "Tenant", remote_side="Tenant.id", back_populates="children"

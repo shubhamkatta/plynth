@@ -26,6 +26,24 @@ Tenant (is_root=True)
 Only a single level of child tenants is allowed. Edit
 `app/services/tenant.create_tenant` to relax this.
 
+## B2B vs B2C — `Tenant.type`
+
+`Tenant.type` is `company` (default) or `individual`. Behaviour is identical
+under the hood — the tenant is still the billing / audit / RBAC boundary —
+but the marker lets product UIs render team-aware vs single-user flows
+and lets analytics segment without joining `users`.
+
+| Endpoint | Tenant created | `type` |
+| --- | --- | --- |
+| `POST /api/v1/auth/register` | caller supplies `tenant_name` + `tenant_slug` | `company` (default) |
+| `POST /api/v1/auth/register-individual` | platform derives slug (`usr-<8hex>`) + name from `full_name` or email local-part | `individual` |
+| `POST /api/v1/tenants` (admin creating child) | caller supplies `name` + `slug` | inherits caller's default — `company` |
+
+An "individual" tenant is just a tenant of 1. The owner can still invite
+teammates later via `POST /api/v1/users` — the marker doesn't cap headcount,
+it's just a hint to the product UI. Same plans, same credits, same audit
+trail.
+
 ## Parent → child access (act-as)
 
 A user in a parent tenant can act inside one of its direct children, with

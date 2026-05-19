@@ -11,6 +11,7 @@ from app.schemas.auth import (
     MeResponse,
     PasswordChangeRequest,
     RefreshRequest,
+    RegisterIndividualRequest,
     RegisterRequest,
     TokenPair,
 )
@@ -42,6 +43,42 @@ async def register(
         email=payload.email,
         password=payload.password,
         tenant_slug=payload.tenant_slug,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+    )
+    return TokenPair(access_token=access, refresh_token=refresh, expires_at=exp)
+
+
+@router.post(
+    "/register-individual",
+    response_model=TokenPair,
+    status_code=status.HTTP_201_CREATED,
+    summary="B2C signup — creates a private tenant of 1",
+)
+async def register_individual(
+    payload: RegisterIndividualRequest,
+    request: Request,
+    product_id: RequireProduct,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TokenPair:
+    """Convenience endpoint for products whose customer is an individual,
+    not a company. No tenant_name / tenant_slug required — the platform
+    derives them. Under the hood it's a normal register with
+    `type=individual`, so everything (subscription, credits, audit) works
+    identically. The user can later invite teammates if they want."""
+    await auth_svc.register_individual(
+        db,
+        product_id=product_id,
+        email=payload.email,
+        password=payload.password,
+        full_name=payload.full_name,
+    )
+    _, access, refresh, exp = await auth_svc.login(
+        db,
+        product_id=product_id,
+        email=payload.email,
+        password=payload.password,
+        tenant_slug=None,
         user_agent=request.headers.get("user-agent"),
         ip_address=request.client.host if request.client else None,
     )

@@ -133,6 +133,41 @@
           }
         },
         {
+          "name": "Register (Individual / B2C)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('accessToken',  json.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"S3cretPassword!\",\n  \"full_name\": \"Alice Rivers\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register-individual",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register-individual"]
+            },
+            "description": "B2C signup. No tenant_name / tenant_slug — the platform derives them (slug = `usr-<8hex>`, name = full_name or email local-part). Creates a Tenant with `type=individual` + the user as owner + a trial subscription. Same primitives as the standard `register`; the type flag is for product UI use only."
+          }
+        },
+        {
           "name": "Login",
           "event": [
             {

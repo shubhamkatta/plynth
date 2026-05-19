@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import Conflict, NotFound, ValidationFailed
 from app.core.tenant import bypass_product, bypass_tenant
 from app.models.product import Product
-from app.models.tenant import Tenant, TenantStatus
+from app.models.tenant import Tenant, TenantStatus, TenantType
 from app.models.user import User
 from app.services import audit
 
@@ -28,6 +28,7 @@ async def create_tenant(
     parent_id: UUID | None = None,
     settings: dict | None = None,
     actor_user_id: UUID | None = None,
+    type: TenantType = TenantType.COMPANY,
 ) -> Tenant:
     with bypass_product(), bypass_tenant():
         existing = await db.scalar(
@@ -51,6 +52,7 @@ async def create_tenant(
             is_root=parent_id is None,
             settings=settings or {},
             status=TenantStatus.ACTIVE,
+            type=type,
         )
         db.add(tenant)
         await db.flush()
@@ -62,7 +64,8 @@ async def create_tenant(
             resource_id=tenant.id,
             tenant_id=tenant.id,
             product_id=product_id,
-            diff={"name": name, "slug": slug, "parent_id": str(parent_id) if parent_id else None},
+            diff={"name": name, "slug": slug, "type": type.value,
+                  "parent_id": str(parent_id) if parent_id else None},
         )
     return tenant
 

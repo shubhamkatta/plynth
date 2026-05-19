@@ -5,7 +5,7 @@ explicit `product_id` from the route's `RequireProduct` dependency.
 """
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
 import structlog
@@ -27,7 +27,7 @@ from app.core.tenant import (
     set_current_product,
     set_current_tenant,
 )
-from app.models.tenant import Tenant
+from app.models.tenant import Tenant, TenantType
 from app.models.user import RefreshToken, User
 from app.services import audit, rbac, tenant as tenant_svc
 from app.services.subscription import start_trial
@@ -51,11 +51,12 @@ async def register(
     email: str,
     password: str,
     full_name: str | None,
+    tenant_type: TenantType = TenantType.COMPANY,
 ) -> tuple[User, Tenant]:
     """Create a new root tenant + its owner user + a trial subscription
     in the given product."""
     tenant = await tenant_svc.create_tenant(
-        db, product_id=product_id, name=tenant_name, slug=tenant_slug,
+        db, product_id=product_id, name=tenant_name, slug=tenant_slug, type=tenant_type,
     )
     set_current_product(product_id)
     set_current_tenant(tenant.id)
@@ -81,9 +82,56 @@ async def register(
         actor_user_id=user.id,
         resource_type="user",
         resource_id=user.id,
-        diff={"email": email},
+        diff={"email": email, "tenant_type": tenant_type.value},
     )
     return user, tenant
+
+
+def _derive_individual_slug() -> str:
+    """`usr-` + 8 hex chars from uuid4. Collisions in production are
+    handled by the unique constraint on (product_id, slug) — the caller
+    retries with a fresh slug."""
+    return f"usr-{uuid4().hex[:8]}"
+
+
+def _derive_individual_name(email: str, full_name: str | None) -> str:
+    if full_name and full_name.strip():
+        return full_name.strip()
+    # Fall back to the email local-part with a friendly capitalisation.
+    local = email.split("@", 1)[0]
+    return local.replace(".", " ").replace("_", " ").replace("-", " ").title() or "User"
+
+
+async def register_individual(
+    db: AsyncSession,
+    *,
+    product_id: UUID,
+    email: str,
+    password: str,
+    full_name: str | None,
+) -> tuple[User, Tenant]:
+    """B2C signup. Creates a private tenant-of-1 with `type=individual`
+    (the user is the sole owner; same primitives as a B2B register).
+
+    Slug is derived as `usr-<8hex>`; one retry on the astronomical
+    chance of collision."""
+    for _ in range(3):
+        slug = _derive_individual_slug()
+        try:
+            return await register(
+                db,
+                product_id=product_id,
+                tenant_name=_derive_individual_name(email, full_name),
+                tenant_slug=slug,
+                email=email,
+                password=password,
+                full_name=full_name,
+                tenant_type=TenantType.INDIVIDUAL,
+            )
+        except Conflict:
+            # Slug collision — try again with a fresh one.
+            continue
+    raise Conflict("could not derive a unique slug after retries (extreme bad luck)")
 
 
 async def login(

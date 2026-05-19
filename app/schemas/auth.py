@@ -14,6 +14,14 @@ class RegisterRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
 
 
+class RegisterIndividualRequest(BaseModel):
+    """B2C signup. No tenant_name / tenant_slug — the platform derives them.
+    Creates a private "tenant of 1" with `type=individual`."""
+    email: EmailStr
+    password: str = Field(min_length=settings.password_min_length, max_length=128)
+    full_name: str | None = Field(default=None, max_length=255)
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str

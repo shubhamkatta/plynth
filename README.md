@@ -73,6 +73,24 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 (The platform-admin endpoint seeds system roles automatically. Create
 plans for the new product via the plans endpoint — see `docs/multi-product.md`.)
 
+### B2C signup (one user, no company)
+
+For products whose customer is an individual, use `POST /api/v1/auth/register-individual`.
+The platform derives a private slug + tenant name; the result is a
+`Tenant` with `type=individual` and a single owner user.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register-individual \
+  -H "X-Product-Slug: notepad" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "alice@example.com", "password": "S3cretPassword!",
+       "full_name": "Alice Rivers"}'
+```
+
+Underneath it's the same `register` flow — same trial subscription,
+credits, audit. The user can later invite teammates if the product
+grows team features. See `docs/multi-tenancy.md`.
+
 ## Layout
 
 ```

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.models.tenant import TenantStatus
+from app.models.tenant import TenantStatus, TenantType
 from app.schemas.common import TimestampedResponse
 
 
@@ -22,6 +22,7 @@ class TenantResponse(TimestampedResponse):
     name: str
     slug: str
     status: TenantStatus
+    type: TenantType
     parent_id: UUID | None
     is_root: bool
     settings: dict

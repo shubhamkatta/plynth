@@ -552,6 +552,33 @@ CORS: each product's web origin must be in `CORS_ORIGINS`.
   **EncryptedSharedPreferences** / Keystore-wrapped (Android).
 - Refresh transparently in a network interceptor.
 
+### 5.3.1 Platform-admin god-mode auth
+
+`X-Platform-Admin-Token` is a true super-user across the whole platform —
+not just the `/api/v1/admin/*` cross-product endpoints. When a request
+carries a valid admin token AND an `X-Product-Slug` header:
+
+- `get_current_user` returns a **transient** `User` instance with
+  `is_platform_admin = True`, `product_id` set from the header, and
+  `tenant_id` set to that product's root tenant (NIL sentinel if the
+  product has no tenants yet — read endpoints return empty lists; write
+  endpoints fail naturally).
+- `services.rbac.user_has_permission` short-circuits to `True` for the
+  flagged user — effective `*:*` permissions on every route.
+- `X-Acting-Tenant-Slug` works the same way as for normal users — the
+  admin can scope a call into a direct child of the product's root.
+
+Use cases:
+- Onboarding tooling that bootstraps a new product end-to-end (create
+  product → seed plans → invite first user) without minting a JWT.
+- Support workflows where an operator needs read access into any tenant
+  without an account inside that tenant.
+- The reference Electron admin client (`apps/admin-electron/`) which
+  exposes this path via the **Platform Admin** login tab + a product
+  picker in the header.
+
+Tests covering this contract: `tests/integration/test_platform_admin_god_mode.py`.
+
 ### 5.4 Server-to-server (product backend calling the platform)
 
 Today: use a normal user account dedicated to the integration and rotate
@@ -576,6 +603,44 @@ concerns matter:
 | **Offline queue** | Buffer mutations to disk (SQLite/lowdb), retry with the same `Idempotency-Key` on reconnect — the platform's idempotency table dedupes. |
 | **Auto-update** | `electron-updater`. Independent of the platform. |
 | **Crash reports / telemetry** | Out of scope for the platform. Use Sentry / Bugsnag from the client. |
+
+#### 5.5.1 Reference implementation: `apps/admin-electron/`
+
+A working admin client lives in [`apps/admin-electron/`](../apps/admin-electron/README.md).
+It enforces every recommendation in the table above:
+
+- All HTTP runs in the **main process** (`src/main/api/client.ts`); the
+  renderer only sees `Result<T>` envelopes via `contextBridge`.
+- Tokens (user session + platform admin token) sit in the OS keychain
+  via `keytar` (`src/main/api/secrets.ts`).
+- 401s trigger a single transparent refresh via `POST /api/v1/auth/refresh`
+  before being surfaced to the renderer.
+- The renderer is sandboxed with strict CSP, no `nodeIntegration`,
+  `contextIsolation: true`, navigation-guard, deny-by-default permissions.
+- The IPC surface is enumerated in `src/shared/ipc-channels.ts` — every
+  channel and its payload type is auditable in one file.
+
+Use it as the template when building any other Electron client on top of
+this platform. See `apps/admin-electron/README.md` for the full
+architecture and contribution flow.
+
+**Wired sections** (calls the live API):
+
+- **Products** — `GET / POST /api/v1/admin/products` (platform-admin token).
+- **Tenants** — `GET / POST /api/v1/tenants`, `POST /api/v1/tenants/{id}/{activate,deactivate}` (user session, scoped to current product + effective tenant).
+- **Users** — `GET / POST /api/v1/users`, `POST /api/v1/users/{id}/{activate,deactivate}`, `DELETE /api/v1/users/{id}` (invite + lifecycle + soft-delete).
+- **Roles** — `GET / POST /api/v1/roles`, `PATCH /api/v1/roles/{id}`, `POST /api/v1/roles/assign`, `GET /api/v1/roles/permissions` (per-product role catalogue + global permission codes).
+- **Plans** — `GET / POST /api/v1/plans`, `PATCH /api/v1/plans/{code}` (price + currency + interval + trial + features).
+- **Subscriptions** — `GET /api/v1/subscriptions` (current tenant's subscription), `POST /api/v1/subscriptions/{purchase,change,cancel}` with proration / at-period-end semantics.
+- **Credits** — `GET /api/v1/credits/wallets`, `GET /api/v1/credits/ledger?limit=N`, `POST /api/v1/credits/grant` (manual top-up with idempotency reference).
+- **Audit** — `GET /api/v1/credits/ledger` as stand-in until `/api/v1/audit` ships.
+- **Dashboard / Settings** — local config + session inspection only.
+
+Every documented section of the platform that exposes admin-relevant
+operations is now reachable from this client. New endpoints land here
+the same way: extend the IPC channel list → add the main handler →
+surface in `BridgeApi` → add the renderer feature folder. See
+`apps/admin-electron/README.md` for the contribution checklist.
 
 ---
 

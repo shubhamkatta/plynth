@@ -141,6 +141,26 @@ curl -X POST http://localhost:8000/api/v1/admin/products \
 
 Then all `X-Product-Slug: chatbot` calls work. See `docs/multi-product.md`.
 
+## Electron admin client
+
+`apps/admin-electron/` is the reference desktop client. It consumes only
+the documented REST API — no privileged surface. When you add a new
+platform endpoint that the admin UI should expose:
+
+1. Add the IPC channel in `apps/admin-electron/src/shared/ipc-channels.ts`.
+2. Add the handler in `apps/admin-electron/src/main/ipc/<domain>.ts`
+   (wrap with `run<T>()` so the renderer gets a `Result<T>`).
+3. Surface it in `BridgeApi` in `src/shared/types.ts` and re-export from
+   `src/preload/index.ts`.
+4. Build the feature folder under `src/renderer/features/<domain>/`.
+5. Update `apps/admin-electron/README.md` § "What it manages".
+6. Per the doc contract, update `docs/ARCHITECTURE.md` § 5.5 / § 6 too.
+
+Security defaults are non-negotiable: `contextIsolation: true`,
+`nodeIntegration: false`, `sandbox: true`, strict CSP. Never store
+tokens in `localStorage` — use the keytar helpers in
+`src/main/api/secrets.ts`.
+
 ## Before opening a PR
 
 - Ran `make lint && make typecheck && make test`.

@@ -1,0 +1,45 @@
+appId: dev.plynth.admin
+productName: Plynth Admin
+copyright: Copyright © 2026 Shubham Katta
+
+asar: true
+asarUnpack:
+  - resources/**
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - out/**/*
+  - package.json
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # entitlements: build/entitlements.mac.plist        # add when code-signing
+  # entitlementsInherit: build/entitlements.mac.plist
+  # notarize: true                                    # when Apple Developer creds available
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Development
+
+# Auto-update — wire when you publish to GitHub Releases / S3.
+# publish:
+#   provider: github
+#   owner: plynth
+#   repo: generic-product-scaffold

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en" data-mantine-color-scheme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plynth Admin</title>
+    <!-- CSP is enforced via response headers from the main process
+         (src/main/index.ts → installCsp). Keeping it there only lets us
+         relax it for dev (Vite HMR needs inline + eval) and keep it
+         strict in packaged builds. -->
+
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

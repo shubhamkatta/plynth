@@ -18,6 +18,11 @@ build/
 .idea/
 .vscode/
 
+# Claude Code runtime artefacts — per-machine, not source of truth.
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+skills-lock.json
+
 # Secrets / certs — NEVER commit these. The platform expects them to live
 # on the deployment host (in /opt/platform/certs/) or in your password
 # manager, not in the repo.

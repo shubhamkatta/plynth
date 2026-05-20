@@ -168,6 +168,7 @@ scripts/seed.py        seed default product + plans + admin
 | [`docs/deploy-digitalocean.md`](docs/deploy-digitalocean.md) | **Active** $6/mo DO droplet + Caddy + B2 backups runbook for `api.example.com` |
 | [`docs/hosting-and-integration.md`](docs/hosting-and-integration.md) | Hosting tiers + how other products consume this API |
 | [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman |
+| [`apps/admin-electron/README.md`](apps/admin-electron/README.md) | **Reference Electron client** — desktop admin app for products / tenants / users / plans / subscriptions / credits / audit. Drop-in template for building your own desktop client on top of this platform. |
 
 ## License
 

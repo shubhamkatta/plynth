@@ -152,6 +152,11 @@ async def list_user_permission_codes(
 async def user_has_permission(
     db: AsyncSession, user: User, required: str, *, tenant_id: UUID | None = None
 ) -> bool:
+    # Platform admin token short-circuit: a transient User created by
+    # get_current_user from a valid X-Platform-Admin-Token has this flag set
+    # and bypasses RBAC entirely (effective `*:*`). See dependencies.py.
+    if getattr(user, "is_platform_admin", False):
+        return True
     codes = await list_user_permission_codes(db, user, tenant_id=tenant_id)
     return any(_matches(g, required) for g in codes)
 

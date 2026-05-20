@@ -167,7 +167,70 @@ async def get_current_user(
     x_acting_tenant_slug: Annotated[
         str | None, Header(alias="X-Acting-Tenant-Slug")
     ] = None,
+    x_platform_admin_token: Annotated[
+        str | None, Header(alias="X-Platform-Admin-Token")
+    ] = None,
 ) -> User:
+    # Platform-admin god-mode auth: a valid X-Platform-Admin-Token authenticates
+    # as a transient super-user with *:* permissions, scoped to the product in
+    # X-Product-Slug and (by default) the product's root tenant. Use
+    # X-Acting-Tenant-Slug to operate inside a child tenant. This makes the
+    # PLATFORM_ADMIN_TOKEN a true super-user across every tenant-scoped route,
+    # not just /admin/products.
+    if (
+        x_platform_admin_token
+        and settings.platform_admin_token
+        and x_platform_admin_token == settings.platform_admin_token
+    ):
+        if header_pid is None:
+            raise ValidationFailed(
+                "platform admin calls require X-Product-Slug header to scope the operation"
+            )
+        with bypass_product(), bypass_tenant():
+            root = await db.scalar(
+                select(Tenant).where(
+                    Tenant.product_id == header_pid,
+                    Tenant.parent_id.is_(None),
+                    Tenant.deleted_at.is_(None),
+                ).order_by(Tenant.created_at).limit(1)
+            )
+        # An empty product (no tenants yet) is valid — admin needs to be able
+        # to inspect it and bootstrap. Use a NIL sentinel so tenant-filtered
+        # GETs return empty lists rather than 404'ing.
+        NIL_TENANT = UUID("00000000-0000-0000-0000-000000000000")
+        root_tenant_id = root.id if root is not None else NIL_TENANT
+
+        admin = User(
+            id=UUID("00000000-0000-0000-0000-000000000000"),
+            product_id=header_pid,
+            tenant_id=root_tenant_id,
+            email="platform-admin@local",
+            password_hash="",  # never authenticated against
+            is_active=True,
+            is_verified=True,
+            full_name="Platform Admin",
+        )
+        admin.is_platform_admin = True  # type: ignore[attr-defined]
+
+        set_current_product(header_pid)
+        effective_tenant_id = root_tenant_id
+        if x_acting_tenant_slug and root is not None:
+            target = await _resolve_act_as(db=db, user=admin, target_slug=x_acting_tenant_slug)
+            if target.id != root.id:
+                effective_tenant_id = target.id
+                set_acting_from_tenant(root.id)
+                structlog.contextvars.bind_contextvars(
+                    acting_from_tenant_id=str(root.id),
+                    acting_as_tenant_slug=x_acting_tenant_slug,
+                )
+        set_current_tenant(effective_tenant_id)
+        structlog.contextvars.bind_contextvars(
+            user_id="platform-admin",
+            tenant_id=str(effective_tenant_id),
+            product_id=str(header_pid),
+        )
+        return admin
+
     if not token:
         raise Unauthorized("missing bearer token")
     try:

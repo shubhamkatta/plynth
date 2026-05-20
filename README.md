@@ -164,7 +164,8 @@ scripts/seed.py        seed default product + plans + admin
 | [`docs/credits.md`](docs/credits.md) | Ledger model, atomic consumption pattern |
 | [`docs/deployment.md`](docs/deployment.md) | Production checklist (generic) |
 | [`docs/deploy-fly.md`](docs/deploy-fly.md) | Concrete Fly.io + Neon + Upstash runbook (generic) |
-| [`docs/deploy-plynth.md`](docs/deploy-plynth.md) | First-deploy runbook tailored to `api.example.com` |
+| [`docs/deploy-plynth.md`](docs/deploy-plynth.md) | Fly runbook tailored to `api.example.com` |
+| [`docs/deploy-digitalocean.md`](docs/deploy-digitalocean.md) | **Active** $6/mo DO droplet + Caddy + B2 backups runbook for `api.example.com` |
 | [`docs/hosting-and-integration.md`](docs/hosting-and-integration.md) | Hosting tiers + how other products consume this API |
 | [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman |
 

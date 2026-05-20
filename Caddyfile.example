@@ -1,0 +1,33 @@
+# Caddy config for production deploys on a VPS.
+# Copy to `Caddyfile` (no extension) and edit the hostname before bringing
+# the stack up. Caddy auto-provisions TLS via Let's Encrypt on first request
+# — make sure DNS points at this host first.
+
+api.example.com {
+    # Forward to the api container on the internal compose network.
+    reverse_proxy api:8000 {
+        # Trust X-Forwarded-* from Caddy itself; rate limiter + log middleware
+        # rely on the real client IP.
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Sensible defaults.
+    encode gzip zstd
+
+    # Structured logs — Caddy emits JSON we can ship alongside the app's
+    # structlog output.
+    log {
+        output stdout
+        format json
+    }
+
+    # Light hardening. Adjust if you need cross-origin browser clients.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+}

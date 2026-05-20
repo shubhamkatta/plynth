@@ -3,8 +3,8 @@
 # Two processes from a single image: the API (HTTP, scale-to-zero) and the
 # arq worker (always-on so cron jobs fire). See docs/deploy-fly.md.
 
-app = "product-platform"   # change to your unique app name (`fly apps create`)
-primary_region = "iad"     # change to your nearest: sjc, lhr, fra, sin, syd, …
+app = "plynth-api"   # change to your unique app name (`fly apps create`)
+primary_region = "bom"     # change to your nearest: sjc, lhr, fra, sin, syd, …
 
 [build]
   dockerfile = "Dockerfile"

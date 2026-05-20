@@ -15,7 +15,8 @@ Companion documents (focused references — cross-linked throughout):
 - `docs/billing.md` — subscription state machine
 - `docs/credits.md` — ledger model
 - `docs/deployment.md` — production checklist
-- `docs/deploy-fly.md` — Fly.io + Neon + Upstash runbook
+- `docs/deploy-fly.md` — Fly.io + Neon + Upstash runbook (generic)
+- `docs/deploy-plynth.md` — first-deploy runbook tailored to `api.example.com`
 - `docs/hosting-and-integration.md` — hosting tiers + platform-owner-facing integration patterns
 - `docs/postman_collection.json` — runnable API collection
 

@@ -163,7 +163,8 @@ scripts/seed.py        seed default product + plans + admin
 | [`docs/billing.md`](docs/billing.md) | Subscription state machine, upgrade/downgrade rules, provider interface |
 | [`docs/credits.md`](docs/credits.md) | Ledger model, atomic consumption pattern |
 | [`docs/deployment.md`](docs/deployment.md) | Production checklist (generic) |
-| [`docs/deploy-fly.md`](docs/deploy-fly.md) | Concrete Fly.io + Neon + Upstash runbook |
+| [`docs/deploy-fly.md`](docs/deploy-fly.md) | Concrete Fly.io + Neon + Upstash runbook (generic) |
+| [`docs/deploy-plynth.md`](docs/deploy-plynth.md) | First-deploy runbook tailored to `api.example.com` |
 | [`docs/hosting-and-integration.md`](docs/hosting-and-integration.md) | Hosting tiers + how other products consume this API |
 | [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman |
 

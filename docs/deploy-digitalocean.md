@@ -156,9 +156,34 @@ sudo mkdir -p /opt/platform
 sudo chown deploy:deploy /opt/platform
 cd /opt/platform
 
-# Clone over HTTPS (no key needed for a public clone; for private repos,
-# either add a deploy key or use a fine-grained PAT via gh).
-git clone https://github.com/plynth/generic-product-scaffold.git .
+# 4.0 — Set up a GitHub deploy key (the repo is private).
+# Generate a keypair scoped to THIS droplet (don't reuse your laptop key).
+ssh-keygen -t ed25519 -C "deploy@plynth-api" \
+    -f ~/.ssh/github_deploy -N ""
+cat ~/.ssh/github_deploy.pub
+# → copy the printed line; in GitHub:
+#   https://github.com/plynth/generic-product-scaffold/settings/keys/new
+#   - Title: "plynth-api droplet"
+#   - Key:   (paste)
+#   - Allow write access: UNCHECKED (read-only — droplet only pulls)
+
+# Tell SSH which key to use for github.com.
+cat >> ~/.ssh/config <<'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github_deploy
+  IdentitiesOnly yes
+EOF
+chmod 600 ~/.ssh/config
+
+# Verify auth before cloning.
+ssh -T git@github.com
+# expect: "Hi plynth/generic-product-scaffold! You've successfully
+#          authenticated, but GitHub does not provide shell access."
+
+# Clone via SSH (HTTPS would prompt for a password we don't have).
+git clone git@github.com:plynth/generic-product-scaffold.git .
 
 # Generate secrets (do these on the droplet so they never leave it)
 JWT_SECRET=$(openssl rand -hex 32)

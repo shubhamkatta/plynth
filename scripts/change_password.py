@@ -23,6 +23,7 @@ Override any of them via env vars:
 import getpass
 import json
 import os
+import ssl
 import sys
 from urllib import error, request
 
@@ -30,6 +31,20 @@ BASE_URL     = os.environ.get("BASE_URL",     "https://api.example.com")
 PRODUCT_SLUG = os.environ.get("PRODUCT_SLUG", "platform")
 EMAIL        = os.environ.get("EMAIL",        "admin@example.com")
 CURRENT_PW   = os.environ.get("CURRENT_PW",   "ChangeMeNow123!")
+
+
+def _ssl_ctx() -> ssl.SSLContext:
+    """Use certifi's CA bundle if available (works around python.org Python
+    on macOS shipping with an empty trust store). Falls back to whatever
+    `ssl.create_default_context()` finds on the system."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+_CTX = _ssl_ctx()
 
 
 def call(method: str, path: str, *, body: dict | None = None, token: str | None = None):
@@ -46,7 +61,7 @@ def call(method: str, path: str, *, body: dict | None = None, token: str | None 
         data=json.dumps(body).encode() if body is not None else None,
     )
     try:
-        with request.urlopen(req) as resp:
+        with request.urlopen(req, context=_CTX) as resp:
             raw = resp.read()
             return resp.status, json.loads(raw) if raw else None
     except error.HTTPError as e:

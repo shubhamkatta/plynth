@@ -156,6 +156,7 @@ scripts/seed.py        seed default product + plans + admin
 | Doc | When to read it |
 | --- | --- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | **First.** HLD + LLD + every documented contract, including the Electron-facing Jobs / Storage API designs. Source of truth — every code change updates it. |
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | **Share this with integrating products.** Self-contained client-side guide; auth flow, headers, endpoint catalogue by UI action, minimal TS + Python client, a `CLAUDE.md` snippet you paste into the consuming product. |
 | [`docs/multi-product.md`](docs/multi-product.md) | Product isolation, header / JWT resolution, admin bootstrap |
 | [`docs/multi-tenancy.md`](docs/multi-tenancy.md) | Tenant isolation, parent → child act-as, B2B vs B2C |
 | [`docs/rbac.md`](docs/rbac.md) | Permission model, scope semantics |

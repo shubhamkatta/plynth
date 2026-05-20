@@ -8,6 +8,7 @@
 
 Companion documents (focused references — cross-linked throughout):
 - `README.md` — quick start + layout
+- `docs/INTEGRATION.md` — **shareable guide for integrating products** (give this to other products' Claude Code sessions; includes a copy-paste CLAUDE.md snippet)
 - `docs/multi-product.md` — product isolation
 - `docs/multi-tenancy.md` — tenant isolation + parent→child act-as + B2C
 - `docs/rbac.md` — permission model + scope semantics
@@ -15,7 +16,7 @@ Companion documents (focused references — cross-linked throughout):
 - `docs/credits.md` — ledger model
 - `docs/deployment.md` — production checklist
 - `docs/deploy-fly.md` — Fly.io + Neon + Upstash runbook
-- `docs/hosting-and-integration.md` — hosting tiers + integration patterns
+- `docs/hosting-and-integration.md` — hosting tiers + platform-owner-facing integration patterns
 - `docs/postman_collection.json` — runnable API collection
 
 ---
@@ -904,6 +905,7 @@ Exceeding any returns 413 with `details.feature_key`.
 | New / changed configuration key | § 4.8 (configuration matrix) | `.env.example` |
 | New / changed external integration (Stripe, Email) | § 2 (stack) + § 3.4 (flows) | — |
 | New / changed background job | § 4.6 (jobs today) | — |
+| Any change visible to integrating products (new endpoint, changed shape, new header, new error code) | § 6.1 / 6.2 / 6.3 here | `docs/INTEGRATION.md` (mirror to keep client-facing doc honest) |
 | Jobs API change | § 6.2 | implementer must keep contract truthful |
 | Storage API change | § 6.3 | implementer must keep contract truthful |
 | Multi-product behavior | § 3.2, § 4.3 | `docs/multi-product.md` |

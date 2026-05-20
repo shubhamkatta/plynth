@@ -68,6 +68,16 @@ usermod -aG sudo deploy
 rsync -a ~/.ssh /home/deploy/
 chown -R deploy:deploy /home/deploy/.ssh
 
+# 2.2.1 — Allow `deploy` to sudo without a password.
+# Why: we created the user with --disabled-password (no SSH password risk)
+# but plain sudo then has nothing to validate against. For a solo-admin
+# droplet, NOPASSWD is the standard pattern — the security boundary is
+# the SSH key (anyone with the key can `sudo -i` anyway). If you ever
+# add other admins, switch to `passwd deploy` and remove this file.
+echo 'deploy ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/deploy
+chmod 440 /etc/sudoers.d/deploy
+visudo -c                                  # must print "parsed OK"
+
 # 2.3 — Lock down SSH (no password auth, no root login)
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config

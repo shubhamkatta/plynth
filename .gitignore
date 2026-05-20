@@ -17,3 +17,13 @@ build/
 .DS_Store
 .idea/
 .vscode/
+
+# Secrets / certs — NEVER commit these. The platform expects them to live
+# on the deployment host (in /opt/platform/certs/) or in your password
+# manager, not in the repo.
+*.pem
+*.key
+*.crt
+*.p12
+certs/
+

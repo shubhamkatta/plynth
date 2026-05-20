@@ -1,29 +1,32 @@
-# Caddy config for production deploys on a VPS.
-# Copy to `Caddyfile` (no extension) and edit the hostname before bringing
-# the stack up. Caddy auto-provisions TLS via Let's Encrypt on first request
-# — make sure DNS points at this host first.
+# Caddy config for production deploys behind Cloudflare.
+#
+# Copy to `Caddyfile` (no extension) on the server, edit the hostname,
+# then bring the stack up.
+#
+# Setup model: Cloudflare proxies traffic (orange cloud) and terminates
+# TLS to the browser using its own browser-trusted cert. To the origin,
+# Cloudflare presents a connection authenticated by a Cloudflare Origin
+# Certificate — a free, 15-year, never-renewing cert that's only trusted
+# by Cloudflare. That cert lives at `./certs/origin.pem` + `origin.key`
+# on the host (mounted into the container at `/etc/caddy/certs/`).
+#
+# If you'd rather skip Cloudflare's proxy and have Caddy provision its
+# own Let's Encrypt cert automatically, delete the `tls ...` line below
+# (Caddy auto-issues with no extra config) and flip the Cloudflare CNAME
+# back to "DNS only" (grey cloud).
 
 api.example.com {
-    # Forward to the api container on the internal compose network.
-    reverse_proxy api:8000 {
-        # Trust X-Forwarded-* from Caddy itself; rate limiter + log middleware
-        # rely on the real client IP.
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
 
-    # Sensible defaults.
+    reverse_proxy api:8000
+
     encode gzip zstd
 
-    # Structured logs — Caddy emits JSON we can ship alongside the app's
-    # structlog output.
     log {
         output stdout
         format json
     }
 
-    # Light hardening. Adjust if you need cross-origin browser clients.
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options    "nosniff"

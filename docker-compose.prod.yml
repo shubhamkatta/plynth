@@ -9,6 +9,10 @@
 # - Postgres data volume bound to a host path for easy backups + portability.
 # - Postgres + Redis ports closed to the outside — internal-only.
 # - Caddy container terminates TLS and reverse-proxies to the api.
+# - Caddy mounts the `./certs/` dir, not individual files. Single-file bind
+#   mounts trigger Docker's silent "create empty directory if source is
+#   missing" behaviour, which leaves Caddy reading a 0-byte dir as a cert
+#   and exploding. Mounting the parent dir errors loudly instead.
 #
 # `!reset` is required because compose v2 APPENDS `ports` lists from base +
 # overlay rather than replacing — without it the api would try to bind
@@ -65,7 +69,8 @@ services:
       - "443:443/udp"                      # HTTP/3
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data                   # ACME cert storage — DO NOT lose this
+      - ./certs:/etc/caddy/certs:ro          # mount the dir, not individual files
+      - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - api

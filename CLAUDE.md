@@ -6,6 +6,36 @@ own tenants, users, plans, subscriptions, credits, audit. Auth, RBAC,
 billing, audit, etc. are an **independent platform layer**; products built
 on top live under `app/products/<name>/`.
 
+## Documentation maintenance contract  (read this first, every time)
+
+**`docs/ARCHITECTURE.md` is the source of truth** for this codebase. It
+contains HLD + LLD + every documented contract: data model, service
+boundaries, route catalogue, RBAC codes, configuration matrix, and the
+designed-but-not-yet-implemented **Jobs API** (§ 6.2) + **Storage API**
+(§ 6.3) that the Electron UI calls.
+
+**Workflow for every task in this repo:**
+
+1. **Read** the relevant section of `docs/ARCHITECTURE.md` (and any
+   focused doc it cross-links) **before** designing the change.
+2. **Implement** the change.
+3. **Update the docs in the same commit** if your change touches any
+   contract. Use the touchpoint table in
+   `docs/ARCHITECTURE.md` § 8 — every code change that lands on a row
+   in that table edits both `ARCHITECTURE.md` AND the focused doc named
+   there.
+4. **Tests** must pass before merging.
+
+If a contract changes (new column, new route, new permission code, new
+config key, new job type, new storage collection, new flow step):
+- Update `docs/ARCHITECTURE.md` first → confirm the design.
+- Implement to match.
+- Never ship code that diverges from the doc silently.
+
+If you implement a designed-but-not-implemented section (Jobs / Storage),
+mark it **"implemented"** at the top of that section in
+`docs/ARCHITECTURE.md` with a link to the PR.
+
 ## Available skills
 
 Invoke via `/skill-name` or trust the matcher:

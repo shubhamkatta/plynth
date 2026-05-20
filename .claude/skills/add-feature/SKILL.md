@@ -8,6 +8,11 @@ description: Add a new product feature module on top of the platform scaffold. U
 A *feature* is a vertical slice: model + schemas + service + router, wired
 into auth, RBAC, multi-tenancy, and the existing transaction boundary.
 
+**Before you start:** read `docs/ARCHITECTURE.md` — at minimum
+§§ 4.1 (module map), 4.2 (schema), 4.3 (scope enforcement), 4.4 (RBAC),
+6.1 (existing routes). When you finish, update those same sections
+to reflect what you added — per the maintenance contract in `CLAUDE.md`.
+
 ## Where to put it
 
 ```

@@ -8,6 +8,12 @@ description: Add a single HTTP endpoint to an existing router. Use for small add
 Use this when the model + service already exist and you only need to expose a
 new HTTP shape.
 
+**Before you start:** scan `docs/ARCHITECTURE.md` § 6.1 to confirm the
+endpoint isn't already documented (or designed-but-not-implemented in
+§ 6.2 / 6.3). When you finish, **add a row to § 6.1** (the Electron
+endpoint catalogue) AND **add the request to `docs/postman_collection.json`** —
+both are part of the doc-as-source-of-truth contract in `CLAUDE.md`.
+
 ## Pattern
 
 ```python

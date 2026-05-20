@@ -3,25 +3,32 @@
 #
 # Differences vs the dev compose:
 # - All services `restart: unless-stopped` so they survive reboots.
-# - API runs gunicorn (no --reload), bound to 127.0.0.1 only — Caddy fronts it.
+# - API runs gunicorn (no --reload); no host port — Caddy reaches it on
+#   the internal docker network at api:8000.
 # - Source volume bind-mount removed; container uses baked-in code.
 # - Postgres data volume bound to a host path for easy backups + portability.
+# - Postgres + Redis ports closed to the outside — internal-only.
 # - Caddy container terminates TLS and reverse-proxies to the api.
+#
+# `!reset` is required because compose v2 APPENDS `ports` lists from base +
+# overlay rather than replacing — without it the api would try to bind
+# both 0.0.0.0:8000 (from base) AND 127.0.0.1:8000 (overlay) and conflict
+# with itself. Requires compose plugin ≥ 2.24 (shipped Jan 2024).
 
 services:
   db:
     restart: unless-stopped
-    ports: []                              # don't expose Postgres to the internet
+    ports: !reset []                       # no host binding; internal only
     volumes:
       - /var/lib/platform/pgdata:/var/lib/postgresql/data
 
   redis:
     restart: unless-stopped
-    ports: []                              # don't expose Redis to the internet
+    ports: !reset []                       # no host binding; internal only
 
   api:
     restart: unless-stopped
-    volumes: []                            # use baked-in code, not host source
+    volumes: !reset []                     # use baked-in code, not host source
     command:
       - gunicorn
       - app.main:app
@@ -35,8 +42,7 @@ services:
       - "-"
       - --error-logfile
       - "-"
-    ports:
-      - "127.0.0.1:8000:8000"              # localhost only; Caddy proxies
+    ports: !reset []                       # no host binding; Caddy uses api:8000
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
@@ -44,7 +50,7 @@ services:
 
   worker:
     restart: unless-stopped
-    volumes: []
+    volumes: !reset []
     environment:
       APP_ENV: production
       APP_DEBUG: "false"

@@ -90,6 +90,8 @@ const api: BridgeApi = {
     openExternal:        (url: string)            => invoke(IPC.system.openExternal, url),
     adminProductSlug:    ()                       => invoke(IPC.system.adminProductSlug),
     setAdminProductSlug: (slug: string | null)    => invoke(IPC.system.setAdminProductSlug, slug),
+    actingTenantSlug:    ()                       => invoke(IPC.system.actingTenantSlug),
+    setActingTenantSlug: (slug: string | null)    => invoke(IPC.system.setActingTenantSlug, slug),
   },
 };
 

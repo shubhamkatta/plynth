@@ -63,5 +63,7 @@ export const IPC = {
     openExternal:        "system.openExternal",
     adminProductSlug:    "system.adminProductSlug",
     setAdminProductSlug: "system.setAdminProductSlug",
+    actingTenantSlug:    "system.actingTenantSlug",
+    setActingTenantSlug: "system.setActingTenantSlug",
   },
 } as const;

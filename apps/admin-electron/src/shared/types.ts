@@ -388,6 +388,8 @@ export interface BridgeApi {
     openExternal:        (url: string)               => Promise<Result<null>>;
     adminProductSlug:    ()                          => Promise<Result<string | null>>;
     setAdminProductSlug: (slug: string | null)       => Promise<Result<null>>;
+    actingTenantSlug:    ()                          => Promise<Result<string | null>>;
+    setActingTenantSlug: (slug: string | null)       => Promise<Result<null>>;
   };
 }
 

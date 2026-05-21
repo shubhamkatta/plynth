@@ -54,7 +54,23 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.system.setAdminProductSlug, (_e, slug: string | null) =>
     run<null>(async () => {
-      setConfig({ adminProductSlug: slug && slug.trim() ? slug.trim() : null });
+      // Switching products invalidates any acting-tenant pick (the tenant
+      // slug doesn't exist in the new product). Clear both atomically.
+      setConfig({
+        adminProductSlug: slug && slug.trim() ? slug.trim() : null,
+        actingTenantSlug: null,
+      });
+      return null;
+    }),
+  );
+
+  ipcMain.handle(IPC.system.actingTenantSlug, () =>
+    run<string | null>(async () => getConfig().actingTenantSlug),
+  );
+
+  ipcMain.handle(IPC.system.setActingTenantSlug, (_e, slug: string | null) =>
+    run<null>(async () => {
+      setConfig({ actingTenantSlug: slug && slug.trim() ? slug.trim() : null });
       return null;
     }),
   );

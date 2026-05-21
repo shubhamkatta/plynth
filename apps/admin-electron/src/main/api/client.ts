@@ -100,8 +100,11 @@ async function buildHeaders(opts: CallOpts, path: string): Promise<Record<string
     headers["X-Product-Slug"] = productSlug;
   }
 
-  if (opts.actingTenantSlug) {
-    headers["X-Acting-Tenant-Slug"] = opts.actingTenantSlug;
+  // Explicit per-call override beats the global picker.
+  const actingTenant = opts.actingTenantSlug ?? cfg.actingTenantSlug;
+  if (actingTenant && !wantAdmin) {
+    // Admin-only paths (/api/v1/admin/*) don't have a tenant context.
+    headers["X-Acting-Tenant-Slug"] = actingTenant;
   }
 
   if (opts.idempotent || opts.idempotencyKey) {

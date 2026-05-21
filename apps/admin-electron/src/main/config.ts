@@ -9,11 +9,16 @@ interface AppConfig {
    *  no user JWT session exists — pure admin mode needs to know which product
    *  to scope tenant/user/plan/etc calls into. */
   adminProductSlug: string | null;
+  /** Direct-child tenant slug to scope every call into via the
+   *  `X-Acting-Tenant-Slug` header. When null, calls operate on the
+   *  product's root tenant (admin) or the user's home tenant. */
+  actingTenantSlug: string | null;
 }
 
 const DEFAULTS: AppConfig = {
   baseUrl:          "https://api.example.com",
   adminProductSlug: null,
+  actingTenantSlug: null,
 };
 
 const FILE = () => join(app.getPath("userData"), "config.json");

@@ -68,8 +68,8 @@ function AdminProductPicker() {
     <Tooltip label="Admin context — every tenant-scoped call is sent with this product slug">
       <Select
         size="xs"
-        w={260}
-        placeholder={products.isLoading ? "Loading products…" : "Pick a product to manage"}
+        w={220}
+        placeholder={products.isLoading ? "Loading products…" : "Pick a product"}
         value={adminProductSlug}
         data={data}
         searchable
@@ -79,6 +79,50 @@ function AdminProductPicker() {
           // Bust caches so every page re-fetches under the new product scope.
           qc.removeQueries();
           notify.info("Admin scope updated", v ?? "cleared");
+        }}
+      />
+    </Tooltip>
+  );
+}
+
+function ActingTenantPicker() {
+  const { hasAdminToken, session, adminProductSlug, actingTenantSlug, setActingTenantSlug } = useAuth();
+  const qc = useQueryClient();
+  // Shown only when there's a product scope to operate inside — both
+  // admin-with-product and signed-in users (the latter can act-as their
+  // direct children if RBAC allows).
+  const showPicker = (hasAdminToken && !!adminProductSlug) || !!session;
+  // Tenants for current scope. With actingTenantSlug already set, /tenants
+  // returns the child + its kids (not useful for picking a sibling). Clear
+  // the acting header first so we see the full picker list.
+  const tenants = useQuery({
+    queryKey: ["tenants", "picker", adminProductSlug, session?.productSlug],
+    queryFn:  () => api.tenants.list(),
+    enabled:  showPicker,
+  });
+  if (!showPicker) return null;
+
+  // The platform's /tenants returns the effective tenant + direct children.
+  // For the picker we want all of them flat, marking the root distinctly.
+  const data = (tenants.data ?? []).map(t => ({
+    value: t.slug,
+    label: t.is_root ? `${t.name} (root)` : t.name,
+  }));
+
+  return (
+    <Tooltip label="Acting tenant — every call carries X-Acting-Tenant-Slug. Clear to operate on the root.">
+      <Select
+        size="xs"
+        w={200}
+        placeholder={tenants.isLoading ? "Loading tenants…" : "Act as tenant (root)"}
+        value={actingTenantSlug}
+        data={data}
+        searchable
+        clearable
+        onChange={async (v) => {
+          await setActingTenantSlug(v);
+          qc.removeQueries();
+          notify.info("Tenant scope updated", v ?? "root");
         }}
       />
     </Tooltip>
@@ -99,6 +143,8 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         await api.system.setAdminProductSlug(null);
         setAdminToken(false);
       }
+      // Always clear acting scope on sign-out — regardless of which mode.
+      await api.system.setActingTenantSlug(null);
       signOut();
       notify.info("Signed out");
       navigate("/login");
@@ -121,6 +167,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
           </Group>
           <Group gap="xs">
             <AdminProductPicker />
+            <ActingTenantPicker />
             {session && (
               <Tooltip label={`Signed in as ${session.email} on ${session.productSlug}`}>
                 <Badge variant="light" color="brand">

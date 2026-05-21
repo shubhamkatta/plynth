@@ -12,6 +12,7 @@ import { useForm } from "@mantine/form";
 import {
   useCreateRole,
   usePermissions,
+  useRoles,
 } from "@renderer/features/roles/useRoles";
 import { notify } from "@renderer/lib/notify";
 
@@ -23,6 +24,10 @@ interface Props {
 export function RoleFormModal({ opened, onClose }: Props) {
   const create      = useCreateRole();
   const permissions = usePermissions();
+  const rolesQ     = useRoles();
+  const takenNames = new Set(
+    (rolesQ.data ?? []).map(r => r.name.toLowerCase()),
+  );
 
   const form = useForm({
     initialValues: {
@@ -31,7 +36,12 @@ export function RoleFormModal({ opened, onClose }: Props) {
       permission_codes: [] as string[],
     },
     validate: {
-      name: (v) => (v.trim().length > 0 ? null : "Name is required"),
+      name: (v) => {
+        const trimmed = v.trim();
+        if (trimmed.length === 0)              return "Name is required";
+        if (takenNames.has(trimmed.toLowerCase())) return `'${trimmed}' already exists in this product`;
+        return null;
+      },
     },
   });
 

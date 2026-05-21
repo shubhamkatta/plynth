@@ -11,7 +11,7 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 
-import { useCreatePlan } from "@renderer/features/plans/usePlans";
+import { useCreatePlan, usePlans } from "@renderer/features/plans/usePlans";
 import { notify } from "@renderer/lib/notify";
 import type { BillingInterval } from "@shared/types";
 
@@ -34,7 +34,10 @@ interface FormValues {
 const CODE_PATTERN = /^[a-z0-9_-]+$/;
 
 export function PlanFormModal({ opened, onClose }: Props) {
-  const create = useCreatePlan();
+  const create   = useCreatePlan();
+  const plansQ   = usePlans();
+  const takenCodes = new Set((plansQ.data ?? []).map(p => p.code));
+
   const form = useForm<FormValues>({
     initialValues: {
       code:          "",
@@ -47,12 +50,13 @@ export function PlanFormModal({ opened, onClose }: Props) {
       is_public:     true,
     },
     validate: {
-      code: (v) =>
-        v.trim().length === 0
-          ? "Code is required"
-          : CODE_PATTERN.test(v)
-            ? null
-            : "Lowercase letters, digits, _ and - only",
+      code: (v) => {
+        const trimmed = v.trim();
+        if (trimmed.length === 0)            return "Code is required";
+        if (!CODE_PATTERN.test(trimmed))     return "Lowercase letters, digits, _ and - only";
+        if (takenCodes.has(trimmed))         return `'${trimmed}' already exists — pick another or edit it on the Plans table`;
+        return null;
+      },
       name: (v) => (v.trim().length === 0 ? "Name is required" : null),
       price_dollars: (v) =>
         v === "" || Number.isNaN(Number(v)) || Number(v) < 0
@@ -95,7 +99,11 @@ export function PlanFormModal({ opened, onClose }: Props) {
         <Stack>
           <TextInput
             label="Code"
-            description="Stable identifier (lowercase, digits, _ and - only). Cannot be changed."
+            description={
+              takenCodes.size > 0
+                ? `Taken: ${[...takenCodes].sort().join(", ")}`
+                : "Stable identifier (lowercase, digits, _ and - only). Cannot be changed."
+            }
             placeholder="pro_monthly"
             withAsterisk
             {...form.getInputProps("code")}

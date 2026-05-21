@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentUser, require_permission
-from app.core.exceptions import Forbidden, NotFound
+from app.core.exceptions import Conflict, Forbidden, NotFound
 from app.core.tenant import current_tenant_id
 from app.models.permission import Permission, RolePermission
 from app.models.role import Role
@@ -55,6 +55,21 @@ async def create_role(
         resource_type="role", diff={"name": payload.name},
     ) as extras:
         tid = current_tenant_id() or user.tenant_id
+        # Pre-check: surface a clean 409 with the duplicated name instead
+        # of letting the DB UNIQUE constraint raise the generic
+        # "Resource already exists" envelope from the IntegrityError
+        # handler. UNIQUE is (product_id, tenant_id, name) — we check
+        # both same-tenant custom roles and product-wide system roles
+        # (tenant_id IS NULL).
+        existing = await db.scalar(
+            select(Role).where(
+                Role.product_id == user.product_id,
+                Role.name == payload.name,
+                (Role.tenant_id == tid) | (Role.tenant_id.is_(None)),
+            )
+        )
+        if existing is not None:
+            raise Conflict(f"role {payload.name!r} already exists in this product")
         role = Role(
             product_id=user.product_id, tenant_id=tid,
             name=payload.name, description=payload.description,

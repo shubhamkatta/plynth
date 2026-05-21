@@ -1,7 +1,7 @@
 import { Button, Modal, Stack, TagsInput, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
 
-import { useInviteUser } from "@renderer/features/users/useUsers";
+import { useInviteUser, useUsers } from "@renderer/features/users/useUsers";
 import { notify } from "@renderer/lib/notify";
 
 interface Props {
@@ -11,10 +11,20 @@ interface Props {
 
 export function UserInviteModal({ opened, onClose }: Props) {
   const invite = useInviteUser();
+  const usersQ = useUsers();
+  const takenEmails = new Set(
+    (usersQ.data ?? []).map(u => u.email.toLowerCase()),
+  );
+
   const form = useForm({
     initialValues: { email: "", full_name: "", role_codes: [] as string[] },
     validate: {
-      email: (v) => (/.+@.+\..+/.test(v) ? null : "Valid email required"),
+      email: (v) => {
+        const trimmed = v.trim().toLowerCase();
+        if (!/.+@.+\..+/.test(trimmed))   return "Valid email required";
+        if (takenEmails.has(trimmed))     return "A user with this email already exists in this tenant";
+        return null;
+      },
     },
   });
 

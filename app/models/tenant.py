@@ -10,7 +10,9 @@ import enum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -65,6 +67,13 @@ class Tenant(UUIDPKMixin, TimestampMixin, SoftDeleteMixin, ProductScopedMixin, B
     )
     is_root: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    # Hard cap on tenant access. When set and < now(), every authenticated
+    # call from any user in the tenant (and child tenants — inheritance is
+    # enforced in app.core.dependencies.get_current_user) returns 403.
+    # NULL means no cap. Admin can override via PATCH /tenants/{id}.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     @property
     def is_individual(self) -> bool:

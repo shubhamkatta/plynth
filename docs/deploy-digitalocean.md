@@ -438,8 +438,10 @@ Run all of these from the repo root on the droplet (`cd /opt/platform`).
 git pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
     up -d --build
+# Run idempotent schema migrations (ADD COLUMN IF NOT EXISTS etc).
+# This project doesn't yet use Alembic versions — see scripts/migrate.py.
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-    exec api alembic upgrade head
+    exec api python -m scripts.migrate
 
 # Tail logs (combined)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f

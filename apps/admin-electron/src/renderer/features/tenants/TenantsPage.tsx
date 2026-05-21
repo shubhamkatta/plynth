@@ -17,6 +17,7 @@ import {
 import { modals } from "@mantine/modals";
 import {
   IconAlertCircle,
+  IconCalendarTime,
   IconCheck,
   IconCopy,
   IconDotsVertical,
@@ -27,6 +28,7 @@ import {
 } from "@tabler/icons-react";
 
 import { PageHeader } from "@renderer/components/PageHeader";
+import { TenantExpiryModal } from "@renderer/features/tenants/TenantExpiryModal";
 import { TenantFormModal } from "@renderer/features/tenants/TenantFormModal";
 import { useSetTenantActive, useTenants } from "@renderer/features/tenants/useTenants";
 import { describeError } from "@renderer/lib/api";
@@ -40,8 +42,22 @@ const statusColor = (s: Tenant["status"]) =>
   : s === "deleted"   ? "red"
   : "gray";
 
+function expiryBadge(t: Tenant): React.ReactNode {
+  if (!t.expires_at) return <Text size="xs" c="dimmed">no cap</Text>;
+  const at = new Date(t.expires_at);
+  const past = at < new Date();
+  return (
+    <Tooltip label={at.toLocaleString()}>
+      <Badge variant={past ? "filled" : "light"} color={past ? "red" : "yellow"}>
+        {past ? "expired" : "expires"} {at.toLocaleDateString()}
+      </Badge>
+    </Tooltip>
+  );
+}
+
 export function TenantsPage() {
   const [open, setOpen] = useState(false);
+  const [expiryTarget, setExpiryTarget] = useState<Tenant | null>(null);
   const { session } = useAuth();
   const { isAuthed, reason } = useEffectiveAuth();
   const q = useTenants();
@@ -119,6 +135,7 @@ export function TenantsPage() {
               <Table.Th>Type</Table.Th>
               <Table.Th>Status</Table.Th>
               <Table.Th>Role</Table.Th>
+              <Table.Th>Expiry</Table.Th>
               <Table.Th>Created</Table.Th>
               <Table.Th></Table.Th>
             </Table.Tr>
@@ -126,7 +143,7 @@ export function TenantsPage() {
           <Table.Tbody>
             {q.data?.length === 0 && (
               <Table.Tr>
-                <Table.Td colSpan={7}>
+                <Table.Td colSpan={8}>
                   <Text c="dimmed" ta="center" py="lg">
                     No tenants visible in scope.
                   </Text>
@@ -168,6 +185,7 @@ export function TenantsPage() {
                     ? <Badge variant="outline" color="brand">root</Badge>
                     : <Text size="xs" c="dimmed">child</Text>}
                 </Table.Td>
+                <Table.Td>{expiryBadge(t)}</Table.Td>
                 <Table.Td>
                   <Text size="sm" c="dimmed">{new Date(t.created_at).toLocaleString()}</Text>
                 </Table.Td>
@@ -179,6 +197,13 @@ export function TenantsPage() {
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
+                      <Menu.Item
+                        leftSection={<IconCalendarTime size={14} />}
+                        onClick={() => setExpiryTarget(t)}
+                      >
+                        Edit expiry
+                      </Menu.Item>
+                      <Menu.Divider />
                       {t.status === "active" ? (
                         <Menu.Item
                           color="yellow"
@@ -207,6 +232,7 @@ export function TenantsPage() {
       </Card>
 
       <TenantFormModal opened={open} onClose={() => setOpen(false)} />
+      <TenantExpiryModal tenant={expiryTarget} onClose={() => setExpiryTarget(null)} />
     </Stack>
   );
 }

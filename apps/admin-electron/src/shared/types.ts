@@ -63,6 +63,10 @@ export interface CreateProductPayload {
   slug:         string;
   description?: string | null;
   settings?:    Record<string, unknown>;
+  /** Default true: backend seeds the standard plan template for the
+   *  chosen tenant_type so the product is immediately usable. */
+  seed_plans?:  boolean;
+  tenant_type?: TenantType;
 }
 
 // ---------- tenants ---------------------------------------------------------
@@ -80,20 +84,35 @@ export interface Tenant {
   parent_id:   string | null;
   is_root:     boolean;
   settings:    Record<string, unknown>;
+  expires_at:  string | null;
   created_at:  string;
   updated_at:  string;
 }
 
+export interface TenantOwnerInput {
+  email:      string;
+  password:   string;
+  full_name?: string | null;
+}
+
 export interface CreateChildTenantPayload {
-  name:       string;
-  slug:       string;
-  parent_id?: string | null;
-  settings?:  Record<string, unknown>;
+  name:        string;
+  slug:        string;
+  parent_id?:  string | null;
+  type?:       TenantType;
+  settings?:   Record<string, unknown>;
+  expires_at?: string | null;
+  /** Admin-only atomic bootstrap: also create the owner user + start a
+   *  trial on `plan_code` in the same transaction. */
+  owner?:      TenantOwnerInput;
+  plan_code?:  string;
 }
 
 export interface UpdateTenantPayload {
-  name?:     string;
-  settings?: Record<string, unknown>;
+  name?:       string;
+  settings?:   Record<string, unknown>;
+  /** Pass null to clear the hard expiry cap, an ISO string to set it. */
+  expires_at?: string | null;
 }
 
 // ---------- users -----------------------------------------------------------

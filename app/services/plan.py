@@ -8,9 +8,66 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import Conflict, NotFound
 from app.core.tenant import bypass_product, bypass_tenant
-from app.models.plan import Plan, PlanFeature
+from app.models.plan import BillingInterval, Plan, PlanFeature
+from app.models.tenant import TenantType
 from app.schemas.plan import PlanCreate, PlanUpdate
 from app.services import audit
+
+
+# Standard plan templates seeded on product creation when the admin opts
+# in (POST /admin/products with seed_plans=True). Shape mirrors PlanCreate.
+# Keep prices conservative — admin can edit post-create from /plans.
+STANDARD_PLAN_TEMPLATES: dict[TenantType, list[dict]] = {
+    TenantType.COMPANY: [
+        {"code": "free",       "name": "Free",       "price_cents":      0, "trial_days":  0, "is_public": True},
+        {"code": "pro",        "name": "Pro",        "price_cents":   4900, "trial_days": 14, "is_public": True},
+        {"code": "enterprise", "name": "Enterprise", "price_cents":  29900, "trial_days": 30, "is_public": True},
+    ],
+    TenantType.INDIVIDUAL: [
+        {"code": "free", "name": "Free", "price_cents":     0, "trial_days":  0, "is_public": True},
+        {"code": "pro",  "name": "Pro",  "price_cents":   999, "trial_days": 14, "is_public": True},
+        {"code": "max",  "name": "Max",  "price_cents":  1999, "trial_days": 14, "is_public": True},
+    ],
+}
+
+
+async def seed_standard_plans(
+    db: AsyncSession, *, product_id: UUID, tenant_type: TenantType
+) -> list[Plan]:
+    """Idempotently seed the standard plan set for a product. Used during
+    product bootstrap to skip the 3-form-fill that's the same 95% of the
+    time. Skips any plan whose `code` already exists in the product."""
+    template = STANDARD_PLAN_TEMPLATES[tenant_type]
+    created: list[Plan] = []
+    with bypass_product(), bypass_tenant():
+        existing_codes = {
+            c for (c,) in (await db.execute(
+                select(Plan.code).where(Plan.product_id == product_id)
+            )).all()
+        }
+        for tpl in template:
+            if tpl["code"] in existing_codes:
+                continue
+            plan = Plan(
+                product_id=product_id,
+                code=tpl["code"],
+                name=tpl["name"],
+                price_cents=tpl["price_cents"],
+                currency="USD",
+                interval=BillingInterval.MONTH,
+                trial_days=tpl["trial_days"],
+                is_public=tpl["is_public"],
+            )
+            db.add(plan)
+            created.append(plan)
+        await db.flush()
+        for plan in created:
+            await audit.record(
+                db, action="plan.create", resource_type="plan", resource_id=plan.id,
+                product_id=product_id,
+                diff={"code": plan.code, "price_cents": plan.price_cents, "seeded": True},
+            )
+    return created
 
 
 async def list_plans(

@@ -114,6 +114,176 @@ async def test_admin_can_bootstrap_root_tenant_in_empty_product(client: AsyncCli
 
 
 @pytest.mark.asyncio
+async def test_create_product_seeds_standard_b2b_plans(client: AsyncClient) -> None:
+    """Default seed_plans=True + tenant_type=COMPANY → 3 standard B2B plans
+    (free, pro, enterprise) appear in /api/v1/plans for the new product."""
+    r = await client.post(
+        "/api/v1/admin/products",
+        json={"name": "B2B Co", "slug": "b2b-co"},   # defaults: seed_plans=True, tenant_type=company
+        headers=platform_admin_headers(),
+    )
+    assert r.status_code == 201, r.text
+
+    r = await client.get(
+        "/api/v1/plans",
+        headers={**platform_admin_headers(), "X-Product-Slug": "b2b-co"},
+    )
+    assert r.status_code == 200
+    codes = {p["code"] for p in r.json()}
+    assert {"free", "pro", "enterprise"}.issubset(codes)
+
+
+@pytest.mark.asyncio
+async def test_create_product_seeds_standard_b2c_plans(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/v1/admin/products",
+        json={"name": "B2C App", "slug": "b2c-app", "tenant_type": "individual"},
+        headers=platform_admin_headers(),
+    )
+    assert r.status_code == 201, r.text
+
+    r = await client.get(
+        "/api/v1/plans",
+        headers={**platform_admin_headers(), "X-Product-Slug": "b2c-app"},
+    )
+    assert r.status_code == 200
+    codes = {p["code"] for p in r.json()}
+    assert {"free", "pro", "max"}.issubset(codes)
+
+
+@pytest.mark.asyncio
+async def test_create_product_with_seed_plans_false_skips_seeding(
+    client: AsyncClient,
+) -> None:
+    r = await client.post(
+        "/api/v1/admin/products",
+        json={"name": "No Seed", "slug": "no-seed", "seed_plans": False},
+        headers=platform_admin_headers(),
+    )
+    assert r.status_code == 201, r.text
+
+    r = await client.get(
+        "/api/v1/plans",
+        headers={**platform_admin_headers(), "X-Product-Slug": "no-seed"},
+    )
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_admin_bootstraps_tenant_with_owner_and_plan(client: AsyncClient) -> None:
+    """One call → product + plans + tenant + owner user + trial subscription."""
+    # Product with auto-seeded B2B plans.
+    await client.post(
+        "/api/v1/admin/products",
+        json={"name": "Bootstrap Co", "slug": "bootstrap-co"},
+        headers=platform_admin_headers(),
+    )
+    # Atomic tenant + owner + sub on "pro" plan.
+    r = await client.post(
+        "/api/v1/tenants",
+        json={
+            "name": "Acme",
+            "slug": "acme",
+            "owner": {
+                "email":     "owner@acme.example.com",
+                "password":  "S3cretPassword!",
+                "full_name": "Alice Owner",
+            },
+            "plan_code": "pro",
+        },
+        headers={**platform_admin_headers(), "X-Product-Slug": "bootstrap-co"},
+    )
+    assert r.status_code == 201, r.text
+    tenant = r.json()
+    assert tenant["slug"] == "acme"
+    assert tenant["is_root"] is True
+
+    # Owner can sign in immediately.
+    r = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@acme.example.com", "password": "S3cretPassword!"},
+        headers={"X-Product-Slug": "bootstrap-co"},
+    )
+    assert r.status_code == 200, r.text
+    access = r.json()["access_token"]
+
+    # And the trial subscription exists on the chosen plan.
+    r = await client.get(
+        "/api/v1/subscription",
+        headers={"Authorization": f"Bearer {access}", "X-Product-Slug": "bootstrap-co"},
+    )
+    assert r.status_code == 200, r.text
+    sub = r.json()
+    assert sub["plan_code"] == "pro"
+    assert sub["status"] == "trial"
+
+
+@pytest.mark.asyncio
+async def test_admin_patch_tenant_expires_at_enforced_for_users(
+    client: AsyncClient,
+) -> None:
+    """Setting tenant.expires_at in the past denies all user auth in that
+    tenant. Admin override (set to null or future) restores access."""
+    from datetime import datetime, timedelta, UTC
+
+    # Bootstrap a product + tenant + owner.
+    await client.post(
+        "/api/v1/admin/products",
+        json={"name": "Expiry Co", "slug": "expiry-co"},
+        headers=platform_admin_headers(),
+    )
+    r = await client.post(
+        "/api/v1/tenants",
+        json={"name": "Exp", "slug": "exp",
+              "owner": {"email": "u@exp.example.com", "password": "S3cretPassword!"},
+              "plan_code": "free"},
+        headers={**platform_admin_headers(), "X-Product-Slug": "expiry-co"},
+    )
+    assert r.status_code == 201, r.text
+    tenant_id = r.json()["id"]
+
+    # User can sign in now.
+    r = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "u@exp.example.com", "password": "S3cretPassword!"},
+        headers={"X-Product-Slug": "expiry-co"},
+    )
+    assert r.status_code == 200
+    access = r.json()["access_token"]
+    user_headers = {"Authorization": f"Bearer {access}", "X-Product-Slug": "expiry-co"}
+    assert (await client.get("/api/v1/auth/me", headers=user_headers)).status_code == 200
+
+    # Admin sets expires_at in the past.
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    r = await client.patch(
+        f"/api/v1/tenants/{tenant_id}",
+        json={"expires_at": past},
+        headers={**platform_admin_headers(), "X-Product-Slug": "expiry-co"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["expires_at"] is not None
+
+    # User's authenticated calls are denied.
+    r = await client.get("/api/v1/auth/me", headers=user_headers)
+    assert r.status_code == 403, r.text
+    assert "expired" in r.json()["message"]
+
+    # Admin overrides — set expires_at back to null.
+    r = await client.patch(
+        f"/api/v1/tenants/{tenant_id}",
+        json={"expires_at": None},
+        headers={**platform_admin_headers(), "X-Product-Slug": "expiry-co"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["expires_at"] is None
+
+    # User can authenticate again.
+    r = await client.get("/api/v1/auth/me", headers=user_headers)
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_admin_can_create_child_tenant_in_populated_product(
     client: AsyncClient,
 ) -> None:

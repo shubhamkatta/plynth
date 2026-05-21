@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_platform_admin
 from app.core.tenant import bypass_product, bypass_tenant
 from app.schemas.product import ProductCreate, ProductResponse
+from app.services import plan as plan_svc
 from app.services import product as product_svc
 from app.services import rbac
 
@@ -33,5 +34,9 @@ async def create_product(
         )
         # Seed the product's per-product system roles so registration works.
         await rbac.ensure_system_roles_for_product(db, product_id=product.id)
+        if payload.seed_plans:
+            await plan_svc.seed_standard_plans(
+                db, product_id=product.id, tenant_type=payload.tenant_type,
+            )
     await product_svc.invalidate_slug_cache(product.slug)
     return product

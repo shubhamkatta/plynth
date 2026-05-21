@@ -273,7 +273,35 @@ async def get_current_user(
         tenant_id=str(effective_tenant_id),
         product_id=str(user.product_id),
     )
+
+    # Hard-cap expiry: if the user's effective tenant has a passed
+    # expires_at, deny access. The platform-admin path above already
+    # returned, so this only affects regular JWT users.
+    await _enforce_tenant_expiry(db, tenant_id=effective_tenant_id)
+
     return user
+
+
+async def _enforce_tenant_expiry(db: AsyncSession, *, tenant_id: UUID) -> None:
+    """Block authenticated access when the (effective) tenant is past its
+    `expires_at`. Walks the parent chain too — a child tenant inherits its
+    parent's expiry. Admin override: PATCH /tenants/{id} expires_at = null
+    (or a future date)."""
+    from datetime import datetime, UTC
+    now = datetime.now(UTC)
+    cursor: UUID | None = tenant_id
+    seen: set[UUID] = set()
+    while cursor is not None and cursor not in seen:
+        seen.add(cursor)
+        with bypass_product(), bypass_tenant():
+            row = await db.scalar(select(Tenant).where(Tenant.id == cursor))
+        if row is None:
+            return
+        if row.expires_at is not None and row.expires_at <= now:
+            raise Forbidden(
+                f"tenant {row.slug!r} expired at {row.expires_at.isoformat()}"
+            )
+        cursor = row.parent_id
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

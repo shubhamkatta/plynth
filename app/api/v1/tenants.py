@@ -41,10 +41,24 @@ async def list_tenants(
 async def create_child_tenant(
     payload: TenantCreate, user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> Tenant:
+    from uuid import UUID
+    NIL_TENANT = UUID("00000000-0000-0000-0000-000000000000")
+    is_admin = getattr(user, "is_platform_admin", False)
+
     tid = current_tenant_id() or user.tenant_id
-    parent_id = payload.parent_id or tid
-    if parent_id != tid:
-        raise Forbidden("can only create child tenants under your own (effective) tenant")
+
+    # Platform-admin bootstrap path: in an empty product (no root tenant
+    # yet), admin's effective tenant is the NIL sentinel. Treat this call
+    # as "create the first root tenant" and pass parent_id=None.
+    if is_admin and tid == NIL_TENANT and payload.parent_id is None:
+        parent_id = None
+        actor_user_id = None  # synthetic admin user — no real actor row.
+    else:
+        parent_id = payload.parent_id or tid
+        if parent_id != tid:
+            raise Forbidden("can only create child tenants under your own (effective) tenant")
+        actor_user_id = None if is_admin else user.id
+
     return await tenant_svc.create_tenant(
         db,
         product_id=user.product_id,
@@ -52,7 +66,7 @@ async def create_child_tenant(
         slug=payload.slug,
         parent_id=parent_id,
         settings=payload.settings,
-        actor_user_id=user.id,
+        actor_user_id=actor_user_id,
     )
 
 

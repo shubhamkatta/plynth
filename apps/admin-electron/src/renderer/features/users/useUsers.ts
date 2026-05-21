@@ -1,11 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InviteUserPayload, PlatformUser, UpdateUserPayload } from "@shared/types";
 import { api } from "@renderer/lib/api";
+import { useEffectiveAuth } from "@renderer/features/auth/useAuth";
 
 const KEY = ["users", "list"] as const;
 
 export function useUsers() {
-  return useQuery<PlatformUser[]>({ queryKey: KEY, queryFn: () => api.users.list() });
+  const { isAuthed } = useEffectiveAuth();
+  return useQuery<PlatformUser[]>({
+    queryKey: KEY,
+    queryFn:  () => api.users.list(),
+    enabled:  isAuthed,
+  });
 }
 
 export function useInviteUser() {

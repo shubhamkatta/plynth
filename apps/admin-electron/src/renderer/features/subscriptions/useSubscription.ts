@@ -7,11 +7,13 @@ import type {
   Subscription,
 } from "@shared/types";
 import { api, isApiError } from "@renderer/lib/api";
+import { useEffectiveAuth } from "@renderer/features/auth/useAuth";
 
 const KEY       = ["subscription"] as const;
 const PLANS_KEY = ["plans", "list"] as const;
 
 export function useSubscription() {
+  const { isAuthed } = useEffectiveAuth();
   return useQuery<Subscription | null>({
     queryKey: KEY,
     queryFn: async () => {
@@ -22,13 +24,16 @@ export function useSubscription() {
         throw e;
       }
     },
+    enabled: isAuthed,
   });
 }
 
 export function usePlans() {
+  const { isAuthed } = useEffectiveAuth();
   return useQuery<Plan[]>({
     queryKey: PLANS_KEY,
     queryFn:  () => api.plans.list(),
+    enabled:  isAuthed,
   });
 }
 

@@ -1,11 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreatePlanPayload, Plan, UpdatePlanPayload } from "@shared/types";
 import { api } from "@renderer/lib/api";
+import { useEffectiveAuth } from "@renderer/features/auth/useAuth";
 
 const KEY = ["plans", "list"] as const;
 
 export function usePlans() {
-  return useQuery<Plan[]>({ queryKey: KEY, queryFn: () => api.plans.list() });
+  const { isAuthed } = useEffectiveAuth();
+  return useQuery<Plan[]>({
+    queryKey: KEY,
+    queryFn:  () => api.plans.list(),
+    enabled:  isAuthed,
+  });
 }
 
 export function useCreatePlan() {

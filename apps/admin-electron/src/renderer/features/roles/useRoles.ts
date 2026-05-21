@@ -6,18 +6,26 @@ import type {
   UpdateRolePayload,
 } from "@shared/types";
 import { api } from "@renderer/lib/api";
+import { useEffectiveAuth } from "@renderer/features/auth/useAuth";
 
 const LIST_KEY        = ["roles", "list"] as const;
 const PERMISSIONS_KEY = ["roles", "permissions"] as const;
 
 export function useRoles() {
-  return useQuery<Role[]>({ queryKey: LIST_KEY, queryFn: () => api.roles.list() });
+  const { isAuthed } = useEffectiveAuth();
+  return useQuery<Role[]>({
+    queryKey: LIST_KEY,
+    queryFn:  () => api.roles.list(),
+    enabled:  isAuthed,
+  });
 }
 
 export function usePermissions() {
+  const { isAuthed } = useEffectiveAuth();
   return useQuery<string[]>({
     queryKey: PERMISSIONS_KEY,
     queryFn:  () => api.roles.permissions(),
+    enabled:  isAuthed,
   });
 }
 

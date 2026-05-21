@@ -1,11 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateChildTenantPayload, Tenant, UpdateTenantPayload } from "@shared/types";
 import { api } from "@renderer/lib/api";
+import { useEffectiveAuth } from "@renderer/features/auth/useAuth";
 
 const KEY = ["tenants", "list"] as const;
 
 export function useTenants() {
-  return useQuery<Tenant[]>({ queryKey: KEY, queryFn: () => api.tenants.list() });
+  const { isAuthed } = useEffectiveAuth();
+  return useQuery<Tenant[]>({
+    queryKey: KEY,
+    queryFn:  () => api.tenants.list(),
+    enabled:  isAuthed,
+  });
 }
 
 export function useCreateChildTenant() {

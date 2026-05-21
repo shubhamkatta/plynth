@@ -63,12 +63,16 @@ export function useAuth() {
 }
 
 /** Effective authentication for tenant-scoped pages: either a real user
- *  session, OR the platform admin token with a product context selected. */
+ *  session, OR the platform admin token with a product context selected.
+ *  Uses individual selectors (not the whole-store form) so Vite HMR doesn't
+ *  invalidate the store reference between renders. */
 export function useEffectiveAuth(): {
   isAuthed: boolean;
   reason:   string | null;   // null when authed; explains *why* when not.
 } {
-  const { session, hasAdminToken, adminProductSlug } = useAuthStore();
+  const session          = useAuthStore(s => s.session);
+  const hasAdminToken    = useAuthStore(s => s.hasAdminToken);
+  const adminProductSlug = useAuthStore(s => s.adminProductSlug);
   if (session) return { isAuthed: true, reason: null };
   if (hasAdminToken) {
     return adminProductSlug

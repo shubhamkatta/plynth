@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import CurrentUser, require_permission
+from app.core.dependencies import CurrentUser, actor_id, require_permission
 from app.core.exceptions import Forbidden, NotFound
 from app.core.security import hash_password
 from app.core.tenant import bypass_product, bypass_tenant, current_tenant_id, set_current_tenant
@@ -54,12 +54,11 @@ async def create_child_tenant(
     # as "create the first root tenant" and pass parent_id=None.
     if is_admin and tid == NIL_TENANT and payload.parent_id is None:
         parent_id = None
-        actor_user_id = None  # synthetic admin user — no real actor row.
     else:
         parent_id = payload.parent_id or tid
         if parent_id != tid:
             raise Forbidden("can only create child tenants under your own (effective) tenant")
-        actor_user_id = None if is_admin else user.id
+    actor_user_id = actor_id(user)
 
     # Bootstrap with optional owner + subscription. Admin-only — regular
     # users go through /auth/register for self-service signup.
@@ -139,7 +138,7 @@ async def update_tenant(
         with bypass_product(), bypass_tenant():
             await audit.record(
                 db, action="tenant.update",
-                actor_user_id=None if getattr(user, "is_platform_admin", False) else user.id,
+                actor_user_id=actor_id(user),
                 resource_type="tenant", resource_id=tenant.id,
                 tenant_id=tenant.id, product_id=tenant.product_id,
                 diff={"changes": {
@@ -179,7 +178,7 @@ async def deactivate(
     if tenant is None or tenant.product_id != user.product_id:
         raise NotFound("tenant not found")
     return await tenant_svc.set_status(
-        db, tenant_id=tenant_id, status=TenantStatus.DEACTIVATED, actor_user_id=user.id
+        db, tenant_id=tenant_id, status=TenantStatus.DEACTIVATED, actor_user_id=actor_id(user)
     )
 
 
@@ -192,5 +191,5 @@ async def activate(
     if tenant is None or tenant.product_id != user.product_id:
         raise NotFound("tenant not found")
     return await tenant_svc.set_status(
-        db, tenant_id=tenant_id, status=TenantStatus.ACTIVE, actor_user_id=user.id
+        db, tenant_id=tenant_id, status=TenantStatus.ACTIVE, actor_user_id=actor_id(user)
     )

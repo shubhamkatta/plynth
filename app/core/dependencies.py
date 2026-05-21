@@ -307,6 +307,14 @@ async def _enforce_tenant_expiry(db: AsyncSession, *, tenant_id: UUID) -> None:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+def actor_id(user: User) -> UUID | None:
+    """Returns the user's id for audit `actor_user_id` — or None when the
+    user is the synthetic platform-admin (which has no row in `users`, so
+    using its sentinel id breaks the FK from audit_log → users). Every
+    route that records audit should funnel `user.id` through this."""
+    return None if getattr(user, "is_platform_admin", False) else user.id
+
+
 async def get_current_tenant_id(user: CurrentUser) -> UUID:
     # Returns the EFFECTIVE tenant id (the child when acting-as, else home).
     from app.core.tenant import current_tenant_id

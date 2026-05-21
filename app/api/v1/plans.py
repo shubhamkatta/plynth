@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import CurrentUser, RequireProduct, require_permission
+from app.core.dependencies import CurrentUser, RequireProduct, actor_id, require_permission
 from app.schemas.plan import PlanCreate, PlanResponse, PlanUpdate
 from app.services import plan as plan_svc
 
@@ -31,7 +31,7 @@ async def create_plan(
     payload: PlanCreate, user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> object:
     return await plan_svc.create_plan(
-        db, payload, product_id=user.product_id, actor_user_id=user.id,
+        db, payload, product_id=user.product_id, actor_user_id=actor_id(user),
     )
 
 
@@ -44,5 +44,5 @@ async def update_plan(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> object:
     return await plan_svc.update_plan(
-        db, code, payload, product_id=user.product_id, actor_user_id=user.id,
+        db, code, payload, product_id=user.product_id, actor_user_id=actor_id(user),
     )

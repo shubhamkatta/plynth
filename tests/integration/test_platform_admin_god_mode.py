@@ -284,6 +284,34 @@ async def test_admin_patch_tenant_expires_at_enforced_for_users(
 
 
 @pytest.mark.asyncio
+async def test_admin_create_plan_does_not_fk_violate_on_audit(
+    client: AsyncClient,
+) -> None:
+    """Regression: admin's synthetic user id (00000000-...) used to land in
+    audit_log.actor_user_id which has an FK to users — the resulting
+    IntegrityError was caught by the generic handler and returned to the
+    user as 'Resource already exists or violates a constraint', which was
+    confusing on a plain create. Admin should now have actor_user_id=NULL
+    in audit and the create should succeed."""
+    # Empty product so the plan create itself is uncontested.
+    await client.post(
+        "/api/v1/admin/products",
+        json={"name": "FK Test", "slug": "fk-test", "seed_plans": False},
+        headers=platform_admin_headers(),
+    )
+    r = await client.post(
+        "/api/v1/plans",
+        json={
+            "code": "custom", "name": "Custom",
+            "price_cents": 0, "currency": "USD", "interval": "month",
+            "trial_days": 0, "is_public": True, "features": [],
+        },
+        headers={**platform_admin_headers(), "X-Product-Slug": "fk-test"},
+    )
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
 async def test_admin_can_create_child_tenant_in_populated_product(
     client: AsyncClient,
 ) -> None:

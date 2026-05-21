@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import CurrentUser, require_permission
+from app.core.dependencies import CurrentUser, actor_id, require_permission
 from app.core.exceptions import NotFound
 from app.core.tenant import current_tenant_id
 from app.models.user import User
@@ -55,7 +55,7 @@ async def invite(
         email=payload.email,
         full_name=payload.full_name,
         role_codes=payload.role_codes,
-        actor_user_id=user.id,
+        actor_user_id=actor_id(user),
     )
 
 
@@ -80,7 +80,7 @@ async def activate(
     user_id: UUID, actor: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
     _scoped_or_404(await db.get(User, user_id), actor)
-    return await user_svc.set_active(db, user_id=user_id, active=True, actor_user_id=actor.id)
+    return await user_svc.set_active(db, user_id=user_id, active=True, actor_user_id=actor_id(actor))
 
 
 @router.post("/{user_id}/deactivate", response_model=UserResponse,
@@ -89,7 +89,7 @@ async def deactivate(
     user_id: UUID, actor: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> User:
     _scoped_or_404(await db.get(User, user_id), actor)
-    return await user_svc.set_active(db, user_id=user_id, active=False, actor_user_id=actor.id)
+    return await user_svc.set_active(db, user_id=user_id, active=False, actor_user_id=actor_id(actor))
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT,
@@ -98,4 +98,4 @@ async def delete_user(
     user_id: UUID, actor: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> None:
     _scoped_or_404(await db.get(User, user_id), actor)
-    await user_svc.soft_delete(db, user_id=user_id, actor_user_id=actor.id)
+    await user_svc.soft_delete(db, user_id=user_id, actor_user_id=actor_id(actor))

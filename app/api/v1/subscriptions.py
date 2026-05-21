@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import CurrentUser, get_idempotency_key, require_permission
+from app.core.dependencies import CurrentUser, actor_id, get_idempotency_key, require_permission
 from app.core.tenant import current_tenant_id
 from app.models.subscription import Subscription
 from app.schemas.subscription import (
@@ -52,7 +52,7 @@ async def purchase(
         tenant_id=current_tenant_id() or user.tenant_id,
         plan_code=payload.plan_code,
         payment_method_token=payload.payment_method_token,
-        actor_user_id=user.id,
+        actor_user_id=actor_id(user),
         idempotency_key=idempotency_key,
     )
     return _serialise(sub)
@@ -71,7 +71,7 @@ async def change(
         tenant_id=current_tenant_id() or user.tenant_id,
         new_plan_code=payload.plan_code,
         proration=payload.proration,
-        actor_user_id=user.id,
+        actor_user_id=actor_id(user),
         idempotency_key=idempotency_key,
     )
     return _serialise(sub)
@@ -87,6 +87,6 @@ async def cancel(
         tenant_id=current_tenant_id() or user.tenant_id,
         at_period_end=payload.at_period_end,
         reason=payload.reason,
-        actor_user_id=user.id,
+        actor_user_id=actor_id(user),
     )
     return _serialise(sub)

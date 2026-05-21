@@ -56,8 +56,18 @@ async def record(
     `X-Acting-Tenant-Slug`). Pass `acting_from_tenant_id_override` only
     from background jobs / scripts that need to override.
     """
+    from uuid import UUID as _UUID
+    NIL = _UUID("00000000-0000-0000-0000-000000000000")
+
     tid = tenant_id or current_tenant_id()
     pid = product_id or current_product_id()
+    # Platform-admin operations on an empty product (no root tenant) carry
+    # a NIL sentinel tenant_id from get_current_user. We must not write
+    # that into audit_log.tenant_id — the FK to `tenants` would fail and
+    # the IntegrityError handler would surface a misleading 409 to the
+    # caller. Treat NIL as "no tenant scope" and skip the audit entry.
+    if tid == NIL:
+        tid = None
     if tid is None or pid is None:
         log.info(
             "audit.skipped_no_scope", action=action,

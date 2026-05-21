@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.dependencies import CurrentUser, require_permission
+from app.core.dependencies import CurrentUser, actor_id, require_permission
 from app.core.exceptions import Conflict, Forbidden, NotFound
 from app.core.tenant import current_tenant_id
 from app.models.permission import Permission, RolePermission
@@ -51,7 +51,7 @@ async def create_role(
     payload: RoleCreate, user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> RoleResponse:
     async with audit.audit_action(
-        db, action="role.create", actor_user_id=user.id,
+        db, action="role.create", actor_user_id=actor_id(user),
         resource_type="role", diff={"name": payload.name},
     ) as extras:
         tid = current_tenant_id() or user.tenant_id
@@ -114,7 +114,7 @@ async def update_role(
 
     changes = payload.model_dump(exclude_unset=True)
     async with audit.audit_action(
-        db, action="role.update", actor_user_id=user.id,
+        db, action="role.update", actor_user_id=actor_id(user),
         resource_type="role", resource_id=role.id, diff={"changes": changes},
     ):
         if payload.name is not None:
@@ -155,7 +155,7 @@ async def assign(
         raise NotFound("role not found in this product")
 
     async with audit.audit_action(
-        db, action="role.assign", actor_user_id=user.id,
+        db, action="role.assign", actor_user_id=actor_id(user),
         resource_type="user", resource_id=payload.user_id,
         diff={"role_id": str(payload.role_id),
               "scope_tenant_id": str(payload.scope_tenant_id) if payload.scope_tenant_id else None},

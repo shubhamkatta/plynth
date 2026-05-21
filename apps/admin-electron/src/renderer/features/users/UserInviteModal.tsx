@@ -65,9 +65,9 @@ export function UserInviteModal({ opened, onClose }: Props) {
         return null;
       },
       initial_password: (v) =>
-        v.length === 0 || v.length >= 8
+        v.length === 0 || v.length >= 12
           ? null
-          : "Min 8 characters (leave blank to auto-generate)",
+          : "Min 12 characters (leave blank to auto-generate)",
     },
   });
 

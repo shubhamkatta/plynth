@@ -146,10 +146,19 @@ async def login(
 ) -> tuple[User, str, str, datetime]:
     """Verify credentials, issue access + refresh tokens."""
     with bypass_product(), bypass_tenant():
+        # Filter out soft-deleted rows: after a user is re-invited under the
+        # same email, two rows share (product_id, email) — one with
+        # deleted_at SET and is_active=False, one alive. Without this
+        # filter, db.scalar's row order is undefined and login can pick
+        # the dead row → "invalid credentials" on a correct password.
         stmt = (
             select(User)
             .join(Tenant, Tenant.id == User.tenant_id)
-            .where(User.email == email.lower(), User.product_id == product_id)
+            .where(
+                User.email == email.lower(),
+                User.product_id == product_id,
+                User.deleted_at.is_(None),
+            )
         )
         if tenant_slug:
             stmt = stmt.where(Tenant.slug == tenant_slug)

@@ -336,6 +336,66 @@ async def test_invite_user_returns_initial_password(client: AsyncClient) -> None
 
 
 @pytest.mark.asyncio
+async def test_reinvited_user_can_log_in_with_new_password(client: AsyncClient) -> None:
+    """After invite → delete → re-invite, the new password works. Used to
+    fail: login query returned the (soft-deleted, is_active=False) old
+    row in undefined order, raising 'invalid credentials'."""
+    await client.post(
+        "/api/v1/admin/products",
+        json={"name": "Login Recycle", "slug": "login-recycle"},
+        headers=platform_admin_headers(),
+    )
+    await client.post(
+        "/api/v1/tenants",
+        json={"name": "Acme", "slug": "acme"},
+        headers={**platform_admin_headers(), "X-Product-Slug": "login-recycle"},
+    )
+
+    # Round 1
+    r1 = await client.post(
+        "/api/v1/users",
+        json={"email": "user@acme.example.com", "role_codes": ["member"],
+              "initial_password": "Round1Password!"},
+        headers={**platform_admin_headers(), "X-Product-Slug": "login-recycle"},
+    )
+    assert r1.status_code == 201
+    user_id_1 = r1.json()["id"]
+
+    # Delete
+    r = await client.delete(
+        f"/api/v1/users/{user_id_1}",
+        headers={**platform_admin_headers(), "X-Product-Slug": "login-recycle"},
+    )
+    assert r.status_code == 204
+
+    # Round 2 — same email, fresh password
+    r2 = await client.post(
+        "/api/v1/users",
+        json={"email": "user@acme.example.com", "role_codes": ["member"],
+              "initial_password": "Round2Password!"},
+        headers={**platform_admin_headers(), "X-Product-Slug": "login-recycle"},
+    )
+    assert r2.status_code == 201
+    assert r2.json()["id"] != user_id_1
+
+    # The new password works.
+    ok = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@acme.example.com", "password": "Round2Password!"},
+        headers={"X-Product-Slug": "login-recycle"},
+    )
+    assert ok.status_code == 200, ok.text
+
+    # The old password does not.
+    bad = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "user@acme.example.com", "password": "Round1Password!"},
+        headers={"X-Product-Slug": "login-recycle"},
+    )
+    assert bad.status_code == 401, bad.text
+
+
+@pytest.mark.asyncio
 async def test_can_reinvite_user_after_soft_delete(client: AsyncClient) -> None:
     """Soft-deleted users free up their email for re-invite. Both the
     service pre-check and the DB unique index (partial WHERE deleted_at

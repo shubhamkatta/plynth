@@ -53,7 +53,7 @@ export function TenantFormModal({ opened, onClose }: Props) {
         : (/.+@.+\..+/.test(v) ? null : "Valid email required"),
       owner_password: (v, vals) => !showAdminBootstrap || !vals.with_owner
         ? null
-        : (v.length >= 8 ? null : "Min 8 characters"),
+        : (v.length >= 12 ? null : "Min 12 characters"),
     },
   });
 

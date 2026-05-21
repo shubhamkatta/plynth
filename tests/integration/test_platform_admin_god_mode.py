@@ -284,6 +284,58 @@ async def test_admin_patch_tenant_expires_at_enforced_for_users(
 
 
 @pytest.mark.asyncio
+async def test_invite_user_returns_initial_password(client: AsyncClient) -> None:
+    """POST /users returns a one-shot initial_password so the inviter can
+    share it out-of-band (no SMTP is wired). When the inviter supplies a
+    password, that exact value comes back; otherwise a random one is
+    generated server-side."""
+    # Bootstrap a product + a root tenant so we have a tenant scope.
+    await client.post(
+        "/api/v1/admin/products",
+        json={"name": "Invite Co", "slug": "invite-co"},
+        headers=platform_admin_headers(),
+    )
+    await client.post(
+        "/api/v1/tenants",
+        json={"name": "Acme", "slug": "acme"},
+        headers={**platform_admin_headers(), "X-Product-Slug": "invite-co"},
+    )
+
+    # No password supplied → server generates one.
+    r = await client.post(
+        "/api/v1/users",
+        json={"email": "alice@acme.example.com", "role_codes": ["member"]},
+        headers={**platform_admin_headers(), "X-Product-Slug": "invite-co"},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["email"] == "alice@acme.example.com"
+    generated = body["initial_password"]
+    assert isinstance(generated, str) and len(generated) >= 8
+
+    # Alice can sign in with the generated password.
+    r = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "alice@acme.example.com", "password": generated},
+        headers={"X-Product-Slug": "invite-co"},
+    )
+    assert r.status_code == 200, r.text
+
+    # Admin-supplied password is echoed back unchanged.
+    r = await client.post(
+        "/api/v1/users",
+        json={
+            "email": "bob@acme.example.com",
+            "role_codes": ["member"],
+            "initial_password": "ChooseMe123!",
+        },
+        headers={**platform_admin_headers(), "X-Product-Slug": "invite-co"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["initial_password"] == "ChooseMe123!"
+
+
+@pytest.mark.asyncio
 async def test_admin_create_plan_does_not_fk_violate_on_audit(
     client: AsyncClient,
 ) -> None:

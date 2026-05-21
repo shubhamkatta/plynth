@@ -134,6 +134,17 @@ export interface InviteUserPayload {
   full_name?:      string | null;
   role_codes?:     string[];
   scope_tenant_id?: string | null;
+  /** Optional — server generates a strong random one if omitted. Either
+   *  way the value is echoed back in `InviteUserResponse.initial_password`
+   *  so the inviter can share it (no SMTP is wired). */
+  initial_password?: string;
+}
+
+export interface InviteUserResponse extends PlatformUser {
+  /** One-shot password. Returned only from POST /users; not present on
+   *  subsequent reads. Share with the user out-of-band; the platform
+   *  doesn't store the plaintext. */
+  initial_password: string;
 }
 
 export interface UpdateUserPayload {
@@ -339,7 +350,7 @@ export interface BridgeApi {
   };
   users: {
     list:        ()                                          => Promise<Result<PlatformUser[]>>;
-    invite:      (p: InviteUserPayload)                      => Promise<Result<PlatformUser>>;
+    invite:      (p: InviteUserPayload)                      => Promise<Result<InviteUserResponse>>;
     update:      (id: string, p: UpdateUserPayload)          => Promise<Result<PlatformUser>>;
     activate:    (id: string)                                => Promise<Result<PlatformUser>>;
     deactivate:  (id: string)                                => Promise<Result<PlatformUser>>;

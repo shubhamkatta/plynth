@@ -3,6 +3,7 @@ import { ipcMain } from "electron";
 import { IPC } from "@shared/ipc-channels";
 import type {
   InviteUserPayload,
+  InviteUserResponse,
   PlatformUser,
   UpdateUserPayload,
 } from "@shared/types";
@@ -15,8 +16,8 @@ export function registerUserHandlers(): void {
   );
 
   ipcMain.handle(IPC.users.invite, (_e, payload: InviteUserPayload) =>
-    run<PlatformUser>(async () =>
-      call<PlatformUser>("POST", "/api/v1/users", { body: payload, idempotent: true }),
+    run<InviteUserResponse>(async () =>
+      call<InviteUserResponse>("POST", "/api/v1/users", { body: payload, idempotent: true }),
     ),
   );
 

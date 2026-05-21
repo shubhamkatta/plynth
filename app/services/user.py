@@ -28,14 +28,19 @@ async def invite_user(
     role_codes: list[str],
     actor_user_id: UUID | None,
     initial_password: str | None = None,
-) -> User:
+) -> tuple[User, str]:
+    """Create a tenant member. Returns (user, raw_password). The caller is
+    responsible for surfacing the raw password to the inviter (we don't
+    send transactional email yet)."""
     existing = await db.scalar(
         select(User).where(User.tenant_id == tenant_id, User.email == email.lower())
     )
     if existing:
         raise Conflict(f"user with email {email!r} already exists in tenant")
 
-    raw_password = initial_password or token_urlsafe(32)
+    # Short, copy-pastable random when admin doesn't pick one — easier to
+    # share over Slack/IM than a 43-char token_urlsafe.
+    raw_password = initial_password or token_urlsafe(12)
     user = User(
         product_id=product_id,
         tenant_id=tenant_id,
@@ -62,9 +67,10 @@ async def invite_user(
 
     await audit.record(
         db, action="user.invite", actor_user_id=actor_user_id, resource_type="user",
-        resource_id=user.id, diff={"email": email, "roles": role_codes},
+        resource_id=user.id,
+        diff={"email": email, "roles": role_codes, "password_supplied": initial_password is not None},
     )
-    return user
+    return user, raw_password
 
 
 async def set_active(

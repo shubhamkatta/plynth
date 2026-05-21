@@ -10,7 +10,7 @@ from app.core.dependencies import CurrentUser, actor_id, require_permission
 from app.core.exceptions import NotFound
 from app.core.tenant import current_tenant_id
 from app.models.user import User
-from app.schemas.user import UserInvite, UserResponse, UserUpdate
+from app.schemas.user import InviteUserResponse, UserInvite, UserResponse, UserUpdate
 from app.services import user as user_svc
 
 router = APIRouter()
@@ -42,13 +42,13 @@ async def list_users(
     )).all())
 
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED,
+@router.post("", response_model=InviteUserResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_permission("users:write"))])
 async def invite(
     payload: UserInvite, user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
-) -> User:
+) -> InviteUserResponse:
     tid = current_tenant_id() or user.tenant_id
-    return await user_svc.invite_user(
+    new_user, password = await user_svc.invite_user(
         db,
         product_id=user.product_id,
         tenant_id=tid,
@@ -56,6 +56,18 @@ async def invite(
         full_name=payload.full_name,
         role_codes=payload.role_codes,
         actor_user_id=actor_id(user),
+        initial_password=payload.initial_password,
+    )
+    return InviteUserResponse(
+        id=new_user.id,
+        created_at=new_user.created_at,
+        updated_at=new_user.updated_at,
+        tenant_id=new_user.tenant_id,
+        email=new_user.email,
+        full_name=new_user.full_name,
+        is_active=new_user.is_active,
+        is_verified=new_user.is_verified,
+        initial_password=password,
     )
 
 

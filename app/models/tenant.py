@@ -12,7 +12,7 @@ from uuid import UUID
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,7 +47,15 @@ class TenantType(str, enum.Enum):
 class Tenant(UUIDPKMixin, TimestampMixin, SoftDeleteMixin, ProductScopedMixin, Base):
     __tablename__ = "tenants"
     __table_args__ = (
-        UniqueConstraint("product_id", "slug", name="uq_tenants_product_slug"),
+        # Slug is unique per product among non-deleted rows only so admin
+        # can re-create after soft-delete. Existing dbs are migrated by
+        # scripts/migrate.py (0003).
+        Index(
+            "uq_tenants_product_slug_alive",
+            "product_id", "slug",
+            unique=True,
+            postgresql_where="deleted_at IS NULL",
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -32,8 +32,15 @@ async def invite_user(
     """Create a tenant member. Returns (user, raw_password). The caller is
     responsible for surfacing the raw password to the inviter (we don't
     send transactional email yet)."""
+    # Soft-deleted users still occupy a row but should not block re-invite
+    # of the same email (the UNIQUE constraint is enforced via a partial
+    # index `WHERE deleted_at IS NULL` — see scripts/migrate.py).
     existing = await db.scalar(
-        select(User).where(User.tenant_id == tenant_id, User.email == email.lower())
+        select(User).where(
+            User.tenant_id == tenant_id,
+            User.email == email.lower(),
+            User.deleted_at.is_(None),
+        )
     )
     if existing:
         raise Conflict(f"user with email {email!r} already exists in tenant")

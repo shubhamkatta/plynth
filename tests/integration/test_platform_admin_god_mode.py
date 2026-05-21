@@ -336,6 +336,50 @@ async def test_invite_user_returns_initial_password(client: AsyncClient) -> None
 
 
 @pytest.mark.asyncio
+async def test_can_reinvite_user_after_soft_delete(client: AsyncClient) -> None:
+    """Soft-deleted users free up their email for re-invite. Both the
+    service pre-check and the DB unique index (partial WHERE deleted_at
+    IS NULL) must agree, otherwise this 409s with the generic
+    IntegrityError envelope."""
+    await client.post(
+        "/api/v1/admin/products",
+        json={"name": "Recycle", "slug": "recycle"},
+        headers=platform_admin_headers(),
+    )
+    await client.post(
+        "/api/v1/tenants",
+        json={"name": "Acme", "slug": "acme"},
+        headers={**platform_admin_headers(), "X-Product-Slug": "recycle"},
+    )
+
+    # First invite.
+    r = await client.post(
+        "/api/v1/users",
+        json={"email": "x@example.com", "role_codes": ["member"]},
+        headers={**platform_admin_headers(), "X-Product-Slug": "recycle"},
+    )
+    assert r.status_code == 201, r.text
+    user_id = r.json()["id"]
+
+    # Soft-delete.
+    r = await client.delete(
+        f"/api/v1/users/{user_id}",
+        headers={**platform_admin_headers(), "X-Product-Slug": "recycle"},
+    )
+    assert r.status_code == 204, r.text
+
+    # Re-invite same email — should succeed with a fresh user row.
+    r = await client.post(
+        "/api/v1/users",
+        json={"email": "x@example.com", "role_codes": ["member"]},
+        headers={**platform_admin_headers(), "X-Product-Slug": "recycle"},
+    )
+    assert r.status_code == 201, r.text
+    new_id = r.json()["id"]
+    assert new_id != user_id
+
+
+@pytest.mark.asyncio
 async def test_admin_create_plan_does_not_fk_violate_on_audit(
     client: AsyncClient,
 ) -> None:

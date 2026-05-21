@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,7 +27,15 @@ class User(
 ):
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+        # Email is unique per tenant — but only among non-deleted rows, so
+        # admin can re-invite an email after soft-delete. Existing dbs are
+        # migrated by scripts/migrate.py (0002).
+        Index(
+            "uq_users_tenant_email_alive",
+            "tenant_id", "email",
+            unique=True,
+            postgresql_where="deleted_at IS NULL",
+        ),
     )
 
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)

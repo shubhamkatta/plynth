@@ -31,8 +31,14 @@ async def create_tenant(
     type: TenantType = TenantType.COMPANY,
 ) -> Tenant:
     with bypass_product(), bypass_tenant():
+        # Match the partial unique index (uq_tenants_product_slug_alive):
+        # soft-deleted tenants free up their slug for re-create.
         existing = await db.scalar(
-            select(Tenant).where(Tenant.product_id == product_id, Tenant.slug == slug)
+            select(Tenant).where(
+                Tenant.product_id == product_id,
+                Tenant.slug == slug,
+                Tenant.deleted_at.is_(None),
+            )
         )
         if existing:
             raise Conflict(f"slug {slug!r} already taken in this product")

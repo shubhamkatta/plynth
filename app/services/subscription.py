@@ -79,11 +79,19 @@ async def purchase(
     actor_user_id: UUID | None,
     idempotency_key: str | None,
 ) -> Subscription:
-    sub = await _get_or_raise(db, tenant_id)
-    plan = await plan_svc.get_by_code(db, product_id=sub.product_id, code=plan_code)
+    """Upsert an ACTIVE subscription on `plan_code` for the tenant.
+
+    Two paths:
+    - Existing sub (trial / past_due / grace / cancelled) → replace plan
+      and flip to ACTIVE. The on-trial → paid case is the common one.
+    - No sub yet (admin-created tenant, or product where start_trial
+      wasn't called) → create one. Saves an extra "start trial first" UX
+      detour just to immediately purchase.
+    """
     tenant = await db.get(Tenant, tenant_id)
     if tenant is None:
         raise NotFound("tenant missing")
+    plan = await plan_svc.get_by_code(db, product_id=tenant.product_id, code=plan_code)
 
     provider = get_billing_provider()
     price_id = plan.provider_refs.get(provider.name)
@@ -101,6 +109,19 @@ async def purchase(
         idempotency_key=idempotency_key,
     )
 
+    with bypass_product(), bypass_tenant():
+        sub = await db.scalar(
+            select(Subscription).where(Subscription.tenant_id == tenant_id)
+        )
+    is_new = sub is None
+    if is_new:
+        sub = Subscription(
+            product_id=tenant.product_id,
+            tenant_id=tenant_id,
+            plan_id=plan.id,
+        )
+        db.add(sub)
+
     sub.plan = plan
     sub.status = SubscriptionStatus.ACTIVE
     sub.current_period_start = p_sub.current_period_start
@@ -114,14 +135,15 @@ async def purchase(
     sub.provider_subscription_id = p_sub.id
     await db.flush()
     await credit.grant_plan_credits(
-        db, tenant_id=tenant_id, product_id=sub.product_id, plan=plan,
+        db, tenant_id=tenant_id, product_id=tenant.product_id, plan=plan,
         reference=f"period:{p_sub.id}:{p_sub.current_period_start.date()}",
     )
     await audit.record(
-        db, action="subscription.purchase", actor_user_id=actor_user_id,
+        db, action="subscription.purchase" if not is_new else "subscription.start",
+        actor_user_id=actor_user_id,
         resource_type="subscription", resource_id=sub.id,
-        tenant_id=tenant_id, product_id=sub.product_id,
-        diff={"plan": plan.code, "provider": provider.name},
+        tenant_id=tenant_id, product_id=tenant.product_id,
+        diff={"plan": plan.code, "provider": provider.name, "created": is_new},
     )
     return sub
 

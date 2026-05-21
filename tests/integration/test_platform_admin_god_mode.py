@@ -396,6 +396,58 @@ async def test_reinvited_user_can_log_in_with_new_password(client: AsyncClient) 
 
 
 @pytest.mark.asyncio
+async def test_admin_purchase_creates_subscription_when_none_exists(
+    client: AsyncClient,
+) -> None:
+    """Admin scopes into a tenant that has no subscription yet (e.g.
+    created via /tenants without owner+plan_code) and clicks Purchase.
+    Used to 404 'subscription not found' because purchase() called
+    _get_or_raise first. Now it upserts."""
+    # Bootstrap product with standard plans + a tenant with NO sub.
+    await client.post(
+        "/api/v1/admin/products",
+        json={"name": "P Test", "slug": "p-test"},
+        headers=platform_admin_headers(),
+    )
+    r = await client.post(
+        "/api/v1/tenants",
+        json={"name": "Acme", "slug": "acme"},  # no owner / plan_code
+        headers={**platform_admin_headers(), "X-Product-Slug": "p-test"},
+    )
+    assert r.status_code == 201, r.text
+
+    # GET shows no subscription.
+    r = await client.get(
+        "/api/v1/subscription",
+        headers={**platform_admin_headers(), "X-Product-Slug": "p-test",
+                 "X-Acting-Tenant-Slug": "acme"},
+    )
+    assert r.status_code == 404
+
+    # Purchase Pro → creates a fresh ACTIVE subscription.
+    r = await client.post(
+        "/api/v1/subscription/purchase",
+        json={"plan_code": "pro"},
+        headers={**platform_admin_headers(), "X-Product-Slug": "p-test",
+                 "X-Acting-Tenant-Slug": "acme"},
+    )
+    assert r.status_code == 200, r.text
+    sub = r.json()
+    assert sub["plan_code"] == "pro"
+    assert sub["status"] == "active"
+    assert sub["has_access"] is True
+
+    # GET now returns it.
+    r = await client.get(
+        "/api/v1/subscription",
+        headers={**platform_admin_headers(), "X-Product-Slug": "p-test",
+                 "X-Acting-Tenant-Slug": "acme"},
+    )
+    assert r.status_code == 200
+    assert r.json()["plan_code"] == "pro"
+
+
+@pytest.mark.asyncio
 async def test_can_reinvite_user_after_soft_delete(client: AsyncClient) -> None:
     """Soft-deleted users free up their email for re-invite. Both the
     service pre-check and the DB unique index (partial WHERE deleted_at

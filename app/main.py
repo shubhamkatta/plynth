@@ -28,12 +28,19 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
 
 
 def create_app() -> FastAPI:
+    # /docs + /openapi.json hand attackers a full map of every route,
+    # payload, header, and error code. Auth still gates the endpoints, but
+    # leaving the schema public costs us reconnaissance hardening for no
+    # operational benefit. Hide in production; ops can flip the env var
+    # `EXPOSE_OPENAPI=true` for a one-off (e.g. importing into Postman).
+    expose_openapi = (not settings.is_production) or settings.expose_openapi
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
         debug=settings.app_debug,
         lifespan=lifespan,
-        docs_url="/docs",
+        docs_url="/docs"        if expose_openapi else None,
+        openapi_url="/openapi.json" if expose_openapi else None,
         redoc_url=None,
     )
 

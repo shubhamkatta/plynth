@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     app_name: str = "product-platform"
     app_debug: bool = False
     app_log_level: str = "INFO"
+    # In production /docs + /openapi.json are hidden by default — leaking
+    # the schema is free reconnaissance for attackers. Flip to True for a
+    # one-off (e.g. importing into Postman) and revert when done.
+    expose_openapi: bool = False
 
     # API
     api_host: str = "0.0.0.0"

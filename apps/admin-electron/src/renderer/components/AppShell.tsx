@@ -2,6 +2,7 @@ import {
   AppShell as MantineAppShell,
   Badge,
   Burger,
+  Button,
   Group,
   NavLink,
   ScrollArea,
@@ -181,13 +182,14 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
               </Tooltip>
             )}
             {(session || hasAdminToken) && (
-              <Tooltip label="Sign out">
-                <NavLink
-                  leftSection={<IconLogout size={16} />}
-                  onClick={onLogout}
-                  styles={{ root: { width: "auto", padding: "6px 10px" } }}
-                />
-              </Tooltip>
+              <Button
+                size="xs"
+                variant="default"
+                leftSection={<IconLogout size={14} />}
+                onClick={onLogout}
+              >
+                Sign out
+              </Button>
             )}
           </Group>
         </Group>

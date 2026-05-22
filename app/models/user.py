@@ -67,3 +67,21 @@ class RefreshToken(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class PasswordResetToken(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
+    """Single-use forgot-password token. We store only the SHA-256 of the
+    secret so a DB leak doesn't hand attackers a working reset link.
+    Tokens are short-lived (default 1 hour); confirming consumes the row."""
+
+    __tablename__ = "password_reset_tokens"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_password_reset_token_hash"),)
+
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)

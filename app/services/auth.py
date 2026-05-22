@@ -4,7 +4,9 @@ Every auth flow is scoped to a Product. `register` and `login` take an
 explicit `product_id` from the route's `RequireProduct` dependency.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from secrets import token_urlsafe
 from uuid import UUID, uuid4
 
 import jwt
@@ -12,8 +14,9 @@ import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import session_scope
-from app.core.exceptions import Conflict, Unauthorized
+from app.core.exceptions import Conflict, NotFound, Unauthorized
 from app.core.security import (
     decode_token,
     hash_password,
@@ -28,7 +31,7 @@ from app.core.tenant import (
     set_current_tenant,
 )
 from app.models.tenant import Tenant, TenantType
-from app.models.user import RefreshToken, User
+from app.models.user import PasswordResetToken, RefreshToken, User
 from app.services import audit, rbac, tenant as tenant_svc
 from app.services.subscription import start_trial
 
@@ -307,3 +310,216 @@ async def change_password(
         db, action="user.password_change", actor_user_id=user.id, resource_type="user",
         resource_id=user.id,
     )
+
+
+# --- forgot / reset password ------------------------------------------------
+
+PASSWORD_RESET_TTL_HOURS = 1
+
+
+def _hash_token(raw: str) -> str:
+    """SHA-256 hex digest. We only persist this — never the raw token."""
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def request_password_reset(
+    db: AsyncSession,
+    *,
+    product_id: UUID,
+    email: str,
+    ip_address: str | None = None,
+) -> tuple[str | None, datetime | None]:
+    """Mint a single-use reset token for the given email in the product.
+
+    Returns (raw_token, expires_at) when a token was issued, or (None, None)
+    if the email doesn't match any user — the caller should ALWAYS return
+    the same 200 envelope to avoid leaking which emails are registered.
+
+    Until SMTP is wired, the caller may surface the raw token to the
+    inviter in non-production environments (see route handler).
+    """
+    with bypass_product(), bypass_tenant():
+        user = await db.scalar(
+            select(User).where(
+                User.product_id == product_id,
+                User.email == email.lower(),
+                User.deleted_at.is_(None),
+                User.is_active.is_(True),
+            )
+        )
+    if user is None:
+        # Don't audit — leaking via audit log would mirror the timing-leak
+        # of telling the caller. We log at debug level only.
+        log.debug("password_reset.unknown_email", email=email, product_id=str(product_id))
+        return None, None
+
+    raw_token = token_urlsafe(32)
+    expires_at = datetime.now(UTC) + timedelta(hours=PASSWORD_RESET_TTL_HOURS)
+    db.add(PasswordResetToken(
+        product_id=product_id,
+        user_id=user.id,
+        token_hash=_hash_token(raw_token),
+        expires_at=expires_at,
+        requested_ip=ip_address,
+    ))
+    await db.flush()
+    await audit.record(
+        db, action="user.password_reset_requested", actor_user_id=user.id,
+        resource_type="user", resource_id=user.id,
+        tenant_id=user.tenant_id, product_id=product_id,
+        diff={"ip": ip_address},
+    )
+    return raw_token, expires_at
+
+
+async def confirm_password_reset(
+    db: AsyncSession, *, token: str, new_password: str
+) -> User:
+    """Validate the token, set the new password, mark token used, and
+    revoke every refresh token for the user (force re-login)."""
+    token_hash = _hash_token(token)
+    now = datetime.now(UTC)
+    with bypass_product(), bypass_tenant():
+        record = await db.scalar(
+            select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+        )
+    if record is None:
+        raise NotFound("reset token not found")
+    if record.used_at is not None:
+        raise Unauthorized("reset token already used")
+    if record.expires_at <= now:
+        raise Unauthorized("reset token expired")
+
+    with bypass_product(), bypass_tenant():
+        user = await db.scalar(select(User).where(User.id == record.user_id))
+    if user is None or not user.is_active or user.deleted_at is not None:
+        raise Unauthorized("user inactive or missing")
+
+    user.password_hash = hash_password(new_password)
+    record.used_at = now
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    await db.flush()
+    await audit.record(
+        db, action="user.password_reset", actor_user_id=user.id,
+        resource_type="user", resource_id=user.id,
+        tenant_id=user.tenant_id, product_id=user.product_id,
+    )
+    return user
+
+
+# --- Google OAuth login -----------------------------------------------------
+
+GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+
+async def login_with_google(
+    db: AsyncSession,
+    *,
+    product_id: UUID,
+    code: str,
+    redirect_uri: str,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> tuple[User, str, str, datetime]:
+    """OAuth2 authorization-code flow.
+
+    1. Exchange `code` with Google for an access token.
+    2. Fetch userinfo → email, name, sub.
+    3. Look up existing user in the product by email. If not found AND the
+       product opts in via `settings.features.google_auto_provision`,
+       auto-create a tenant + user (B2C-style, same shape as
+       register_individual). Otherwise 401 — admin must invite first.
+    4. Issue platform JWTs as if the user logged in normally.
+
+    Google client_id / client_secret come from env (GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET). If they're not set we 503 — no point pretending.
+    """
+    import httpx
+
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise Unauthorized("Google login is not configured on this platform")
+
+    async with httpx.AsyncClient(timeout=10.0) as http:
+        token_resp = await http.post(GOOGLE_TOKEN_URL, data={
+            "code":          code,
+            "client_id":     settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri":  redirect_uri,
+            "grant_type":    "authorization_code",
+        })
+        if token_resp.status_code != 200:
+            log.warning("google.token_exchange_failed",
+                        status=token_resp.status_code, body=token_resp.text[:300])
+            raise Unauthorized("google code exchange failed")
+        access = token_resp.json().get("access_token")
+        if not access:
+            raise Unauthorized("google response missing access_token")
+
+        info_resp = await http.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access}"},
+        )
+        if info_resp.status_code != 200:
+            raise Unauthorized("google userinfo failed")
+        info = info_resp.json()
+
+    email = (info.get("email") or "").lower()
+    if not email or not info.get("email_verified", False):
+        raise Unauthorized("google account has no verified email")
+    full_name = info.get("name")
+
+    with bypass_product(), bypass_tenant():
+        user = await db.scalar(
+            select(User).where(
+                User.product_id == product_id,
+                User.email == email,
+                User.deleted_at.is_(None),
+            )
+        )
+
+    if user is None:
+        # Auto-provision (B2C-style) if the product opts in. Otherwise the
+        # user must be invited via /users first.
+        product = await db.get(__import__("app.models.product",
+                                          fromlist=["Product"]).Product, product_id)
+        features = (product.settings or {}).get("features", {}) if product else {}
+        if not features.get("google_auto_provision", False):
+            raise Unauthorized("no account for this email; ask an admin to invite you")
+        user, _tenant = await register_individual(
+            db,
+            product_id=product_id,
+            email=email,
+            password=token_urlsafe(32),  # random — user logs in via Google
+            full_name=full_name,
+        )
+
+    if not user.is_active:
+        raise Unauthorized("user inactive")
+
+    set_current_product(user.product_id)
+    set_current_tenant(user.tenant_id)
+    user.last_login_at = datetime.now(UTC)
+    access_token, _, access_exp = issue_token(
+        subject=user.id, tenant_id=user.tenant_id,
+        product_id=user.product_id, typ="access",
+    )
+    refresh_token, refresh_jti, refresh_exp = issue_token(
+        subject=user.id, tenant_id=user.tenant_id,
+        product_id=user.product_id, typ="refresh",
+    )
+    db.add(RefreshToken(
+        product_id=user.product_id, user_id=user.id, jti=refresh_jti,
+        expires_at=refresh_exp, user_agent=user_agent, ip_address=ip_address,
+    ))
+    await audit.record(
+        db, action="user.login_google", actor_user_id=user.id, actor_ip=ip_address,
+        resource_type="user", resource_id=user.id,
+        tenant_id=user.tenant_id, product_id=user.product_id,
+        diff={"google_sub": info.get("sub")},
+    )
+    return user, access_token, refresh_token, access_exp

@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_seconds: int = 60 * 60 * 24 * 30
     password_min_length: int = 12
 
+    # Google OAuth (optional). When unset, POST /auth/google returns 401
+    # "Google login is not configured on this platform". Per-product
+    # opt-in for auto-provisioning new users lives in
+    # Product.settings.features.google_auto_provision.
+    google_client_id:     str = ""
+    google_client_secret: str = ""
+
     # DB
     database_url: PostgresDsn
     database_pool_size: int = 10

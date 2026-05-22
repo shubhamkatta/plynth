@@ -46,6 +46,7 @@ TENANT_TABLES = (
     "credit_wallets",
     "idempotency_keys",
     "invoices",
+    "password_reset_tokens",
     "refresh_tokens",
     "user_roles",
     "subscriptions",

@@ -11,7 +11,7 @@ from app.models.product import Product
 from app.models.role import Role, UserRole
 from app.models.subscription import Subscription
 from app.models.tenant import Tenant
-from app.models.user import RefreshToken, User
+from app.models.user import PasswordResetToken, RefreshToken, User
 
 __all__ = [
     "AuditLog",
@@ -20,6 +20,7 @@ __all__ = [
     "CreditWallet",
     "IdempotencyKey",
     "Invoice",
+    "PasswordResetToken",
     "Permission",
     "Plan",
     "PlanFeature",

@@ -51,6 +51,30 @@ MIGRATIONS: list[tuple[str, str]] = [
           ON tenants (product_id, slug) WHERE deleted_at IS NULL;
         """,
     ),
+    # Forgot-password tokens. SHA-256 of the raw token, FK to user with
+    # cascade delete. We never store the plaintext.
+    (
+        "0004_password_reset_tokens",
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+          id            UUID PRIMARY KEY,
+          product_id    UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          user_id       UUID NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+          token_hash    VARCHAR(64)  NOT NULL,
+          expires_at    TIMESTAMPTZ  NOT NULL,
+          used_at       TIMESTAMPTZ,
+          requested_ip  VARCHAR(64),
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_password_reset_token_hash
+          ON password_reset_tokens (token_hash);
+        CREATE INDEX IF NOT EXISTS ix_password_reset_tokens_user_id
+          ON password_reset_tokens (user_id);
+        CREATE INDEX IF NOT EXISTS ix_password_reset_tokens_product_id
+          ON password_reset_tokens (product_id);
+        """,
+    ),
 ]
 
 

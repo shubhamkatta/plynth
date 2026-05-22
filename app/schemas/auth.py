@@ -49,6 +49,34 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=settings.password_min_length, max_length=128)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Always 200 + this body — never leak whether the email exists.
+    `reset_token` is populated only in non-production environments so
+    dev/staging can test the flow without SMTP wired."""
+    ok: bool = True
+    reset_token: str | None = None
+    expires_at: datetime | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=128)
+    new_password: str = Field(min_length=settings.password_min_length, max_length=128)
+
+
+class GoogleLoginRequest(BaseModel):
+    """OAuth2 authorization-code flow from the product's frontend.
+    The frontend gets `code` from Google's redirect and forwards it
+    here along with the same `redirect_uri` it used."""
+    code: str = Field(min_length=10, max_length=2048)
+    redirect_uri: str = Field(min_length=10, max_length=512)
+    # Admin-set OAuth2 nonce check is out of scope — frontend should
+    # verify the `state` round-trip on its side before calling us.
+
+
 class MeResponse(BaseModel):
     id: UUID
     product_id: UUID

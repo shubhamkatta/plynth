@@ -216,6 +216,9 @@ Anchored to UI actions, not REST verbs. Full request bodies in
 | Sign out current session | `POST /api/v1/auth/logout` |
 | Sign out everywhere | `POST /api/v1/auth/logout` `{all_sessions: true}` |
 | Change password | `POST /api/v1/auth/password` |
+| Forgot password | `POST /api/v1/auth/password/forgot` `{email}` — always returns 200 (no enumeration). Non-prod responses include the raw `reset_token` for testing. Prod returns just `{ok: true}` — the platform's notification provider stub is what you'll wire to email a link `<your-app>/reset?token=…`. |
+| Reset password (consume token) | `POST /api/v1/auth/password/reset` `{token, new_password}` — single-use, expires in 1 hour. Revokes every existing refresh token. |
+| Sign in with Google (OAuth2) | `POST /api/v1/auth/google` `{code, redirect_uri}` — you run the redirect dance on your side, then forward the `code` here. Returns `TokenPair`. New users are rejected unless the product opts in to `settings.features.google_auto_provision = true` (then a B2C-style tenant is created on first login). Platform-wide config: `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` env vars; unset → 401 "not configured". |
 | Read current user + permissions | `GET /api/v1/auth/me` |
 
 ### 6.2 Subscriptions & plans

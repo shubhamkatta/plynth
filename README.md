@@ -10,8 +10,8 @@
 ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
 ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
 ═══════════════════════════════════════════
-              P  L  Y  N  T  H
-  identity · tenancy · rbac · billing · audit
+                P L Y N T H
+identity · tenancy · rbac · billing · audit
 ═══════════════════════════════════════════
 </pre>
 

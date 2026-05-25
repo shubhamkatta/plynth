@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -20,7 +21,7 @@ class TenantCreate(BaseModel):
     slug:       str = Field(min_length=2, max_length=64, pattern=r"^[a-z0-9-]+$")
     parent_id:  UUID | None = None
     type:       TenantType = TenantType.COMPANY
-    settings:   dict = Field(default_factory=dict)
+    settings:   dict[str, Any] = Field(default_factory=dict)
     expires_at: datetime | None = None
     # Atomic bootstrap (admin-only). When provided, the new tenant gets an
     # owner user (with the system "owner" role) + a Subscription on
@@ -32,7 +33,7 @@ class TenantCreate(BaseModel):
 
 class TenantUpdate(BaseModel):
     name:       str | None = Field(default=None, min_length=1, max_length=255)
-    settings:   dict | None = None
+    settings:   dict[str, Any] | None = None
     # Admin override for the hard expiry cap. Pass null to clear, an ISO
     # datetime to extend / shorten. Enforced in app.core.dependencies.
     expires_at: datetime | None = None
@@ -45,7 +46,7 @@ class TenantResponse(TimestampedResponse):
     type:       TenantType
     parent_id:  UUID | None
     is_root:    bool
-    settings:   dict
+    settings:   dict[str, Any]
     expires_at: datetime | None
 
 

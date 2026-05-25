@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String
@@ -74,7 +74,7 @@ class Tenant(UUIDPKMixin, TimestampMixin, SoftDeleteMixin, ProductScopedMixin, B
         PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True
     )
     is_root: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     # Hard cap on tenant access. When set and < now(), every authenticated
     # call from any user in the tenant (and child tenants — inheritance is
     # enforced in app.core.dependencies.get_current_user) returns 403.

@@ -44,13 +44,20 @@ class MockBillingProvider(BillingProvider):
         return sub
 
     async def change_subscription(
-        self, *, subscription_id, new_price_id, proration, idempotency_key
+        self,
+        *,
+        subscription_id: str,
+        new_price_id: str,
+        proration: bool,
+        idempotency_key: str | None,
     ) -> ProviderSubscription:
         sub = self._subscriptions[subscription_id]
         sub.price_id = new_price_id
         return sub
 
-    async def cancel_subscription(self, *, subscription_id, at_period_end) -> ProviderSubscription:
+    async def cancel_subscription(
+        self, *, subscription_id: str, at_period_end: bool
+    ) -> ProviderSubscription:
         sub = self._subscriptions[subscription_id]
         if at_period_end:
             sub.cancel_at_period_end = True

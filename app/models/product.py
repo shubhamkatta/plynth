@@ -12,6 +12,7 @@ with `X-Platform-Admin-Token`), not by end-users.
 from __future__ import annotations
 
 import enum
+from typing import Any
 
 from sqlalchemy import Boolean, Enum, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
@@ -39,4 +40,4 @@ class Product(UUIDPKMixin, TimestampMixin, SoftDeleteMixin, Base):
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

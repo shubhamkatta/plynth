@@ -6,6 +6,7 @@ products.
 """
 
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -26,7 +27,7 @@ async def create_tenant(
     name: str,
     slug: str,
     parent_id: UUID | None = None,
-    settings: dict | None = None,
+    settings: dict[str, Any] | None = None,
     actor_user_id: UUID | None = None,
     type: TenantType = TenantType.COMPANY,
 ) -> Tenant:
@@ -130,19 +131,21 @@ async def list_accessible_children(
             db, user, ACT_AS_PERMISSION, tenant_id=user.tenant_id
         )
     )
-    target_scoped_ids: set = set()
+    target_scoped_ids: set[UUID] = set()
     if global_block is None and not has_global_perm:
         # Pull every binding scoped to a specific tenant for this user.
-        target_scoped_ids = set(
-            (
-                await db.scalars(
-                    select(UserRole.scope_tenant_id).where(
-                        UserRole.user_id == user.id,
-                        UserRole.scope_tenant_id.is_not(None),
-                    )
+        # The `is_not(None)` filter guarantees no NULLs at runtime; mypy
+        # still types the column as `UUID | None`, so narrow with a
+        # comprehension.
+        rows = (
+            await db.scalars(
+                select(UserRole.scope_tenant_id).where(
+                    UserRole.user_id == user.id,
+                    UserRole.scope_tenant_id.is_not(None),
                 )
-            ).all()
-        )
+            )
+        ).all()
+        target_scoped_ids = {tid for tid in rows if tid is not None}
 
     out: list[AccessibleChild] = []
     for c in children:

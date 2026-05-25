@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String, UniqueConstraint
@@ -43,7 +43,7 @@ class Plan(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Provider IDs (Stripe price ID, etc) — keyed by provider name.
-    provider_refs: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    provider_refs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     features: Mapped[list[PlanFeature]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
@@ -73,6 +73,6 @@ class PlanFeature(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
     limit_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     credit_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     is_hard_limit: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     plan: Mapped[Plan] = relationship(back_populates="features")

@@ -5,7 +5,7 @@ from the request context. Bypass requires explicit `bypass_product()` /
 `bypass_tenant()`. See docs/multi-tenancy.md + docs/multi-product.md.
 """
 
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 from uuid import UUID
 
 from sqlalchemy import Select, select
@@ -18,7 +18,7 @@ from app.core.tenant import (
     is_bypass,
     is_product_bypass,
 )
-from app.models.base import Base, TenantScopedMixin
+from app.models.base import Base  # noqa: F401  (re-exported for callers)
 
 ModelT = TypeVar("ModelT", bound=Base)
 
@@ -48,7 +48,11 @@ class Repository(Generic[ModelT]):
         await self.session.flush()
 
 
-TenantModelT = TypeVar("TenantModelT", bound=TenantScopedMixin)
+# Concrete tenant-scoped models inherit both `Base` and `TenantScopedMixin`
+# (and usually `ProductScopedMixin`); the `Base` bound is what the parent
+# `Repository[ModelT]` requires. The mixin attributes (`tenant_id`,
+# optionally `product_id`) are detected at runtime via `hasattr`.
+TenantModelT = TypeVar("TenantModelT", bound=Base)
 
 
 class TenantRepository(Repository[TenantModelT]):
@@ -58,8 +62,8 @@ class TenantRepository(Repository[TenantModelT]):
     attribute (i.e. inherits `ProductScopedMixin`). Same for `tenant_id`.
     """
 
-    def _stmt(self) -> Select:
-        stmt: Select = select(self.model)  # type: ignore[arg-type]
+    def _stmt(self) -> Select[Any]:
+        stmt: Select[Any] = select(self.model)
         if hasattr(self.model, "product_id") and not is_product_bypass():
             pid = current_product_id()
             if pid is None:
@@ -80,27 +84,34 @@ class TenantRepository(Repository[TenantModelT]):
 
     async def get(self, id_: UUID) -> TenantModelT | None:
         stmt = self._stmt().where(self.model.id == id_)  # type: ignore[attr-defined]
-        return await self.session.scalar(stmt)
+        return cast(TenantModelT | None, await self.session.scalar(stmt))
 
     async def list(self, *, limit: int = 50, offset: int = 0) -> list[TenantModelT]:
         stmt = self._stmt().limit(limit).offset(offset)
         return list((await self.session.scalars(stmt)).all())
 
     async def add(self, obj: TenantModelT) -> TenantModelT:
+        # `TenantModelT` is bound to `Base`; the mixin-supplied columns are
+        # only known at runtime, so reach for `getattr` / `setattr` to keep
+        # the strict type checker quiet without losing the safety net.
         if hasattr(obj, "product_id") and not is_product_bypass():
             pid = current_product_id()
             if pid is None:
                 raise RuntimeError("Cannot add product-scoped row without product context.")
-            if getattr(obj, "product_id", None) is None:
-                obj.product_id = pid  # type: ignore[attr-defined]
-            elif obj.product_id != pid:  # type: ignore[attr-defined]
+            existing_pid = getattr(obj, "product_id", None)
+            if existing_pid is None:
+                # B010: setattr-with-literal — required here because the
+                # column comes from a mixin and isn't on the TypeVar bound.
+                setattr(obj, "product_id", pid)  # noqa: B010
+            elif existing_pid != pid:
                 raise RuntimeError("product_id on object does not match current product context.")
         if not is_bypass():
             tid = current_tenant_id()
             if tid is None:
                 raise RuntimeError("Cannot add tenant-scoped row without tenant context.")
-            if getattr(obj, "tenant_id", None) is None:
-                obj.tenant_id = tid  # type: ignore[attr-defined]
-            elif obj.tenant_id != tid:  # type: ignore[attr-defined]
+            existing_tid = getattr(obj, "tenant_id", None)
+            if existing_tid is None:
+                setattr(obj, "tenant_id", tid)  # noqa: B010
+            elif existing_tid != tid:
                 raise RuntimeError("tenant_id on object does not match current tenant context.")
         return await super().add(obj)

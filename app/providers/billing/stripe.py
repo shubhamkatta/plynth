@@ -7,6 +7,7 @@ Two important conventions:
 """
 
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import stripe
 
@@ -54,7 +55,7 @@ class StripeBillingProvider(BillingProvider):
         payment_method_token: str | None,
         idempotency_key: str | None,
     ) -> ProviderSubscription:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "customer": customer_id,
             "items": [{"price": price_id}],
             "payment_behavior": "default_incomplete",
@@ -98,20 +99,46 @@ class StripeBillingProvider(BillingProvider):
         return self._sub(sub)
 
     async def parse_webhook(self, *, payload: bytes, signature: str) -> WebhookEvent:
-        event = stripe.Webhook.construct_event(payload, signature, settings.stripe_webhook_secret)
+        # `construct_event` is untyped in the stripe stubs; the cast keeps the
+        # strict-mode "no-untyped-call" check from firing without losing the
+        # runtime signature-verification behaviour.
+        construct = cast(Any, stripe.Webhook.construct_event)
+        event = construct(payload, signature, settings.stripe_webhook_secret)
         return WebhookEvent(id=event["id"], type=event["type"], data=event["data"]["object"])
 
     async def retry_invoice(self, *, invoice_id: str) -> ProviderInvoice:
         inv = await stripe.Invoice.pay_async(invoice_id)
+        # The Stripe SDK types are loose: `customer` may be str | Customer | None,
+        # `subscription` was removed from the typed surface in newer SDKs but is
+        # still present at runtime, and `status` is typed as a Literal | None.
+        # Normalise them all to strings here; raise loudly if a required field
+        # is genuinely missing.
+        raw_customer = getattr(inv, "customer", None)
+        if raw_customer is None:
+            raise RuntimeError(f"stripe invoice {inv.id} has no customer")
+        customer_id = raw_customer if isinstance(raw_customer, str) else raw_customer.id
+
+        raw_subscription = getattr(inv, "subscription", None)
+        subscription_id: str | None
+        if raw_subscription is None:
+            subscription_id = None
+        elif isinstance(raw_subscription, str):
+            subscription_id = raw_subscription
+        else:
+            subscription_id = raw_subscription.id
+
+        if inv.status is None:
+            raise RuntimeError(f"stripe invoice {inv.id} has no status")
+
         return ProviderInvoice(
-            id=inv.id, customer_id=inv.customer, subscription_id=inv.subscription,
+            id=inv.id, customer_id=customer_id, subscription_id=subscription_id,
             amount_cents=inv.amount_due, currency=inv.currency.upper(),
             status=inv.status, hosted_url=inv.hosted_invoice_url,
             issued_at=_ts(inv.created), due_at=_ts(inv.due_date or inv.created),
         )
 
     @staticmethod
-    def _sub(sub) -> ProviderSubscription:
+    def _sub(sub: Any) -> ProviderSubscription:
         return ProviderSubscription(
             id=sub["id"],
             customer_id=sub["customer"],

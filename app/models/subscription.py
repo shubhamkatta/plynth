@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint
@@ -60,7 +60,7 @@ class Subscription(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
     provider_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     tenant: Mapped[Tenant] = relationship(back_populates="subscription")
     plan: Mapped[Plan] = relationship(back_populates="subscriptions")

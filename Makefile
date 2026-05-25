@@ -1,4 +1,4 @@
-.PHONY: help install dev up down logs shell migrate revision seed test lint fmt typecheck
+.PHONY: help install dev up down logs shell migrate revision seed test lint fmt typecheck openapi
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -23,6 +23,10 @@ shell:
 
 migrate: ## apply migrations
 	docker compose exec api alembic upgrade head
+
+openapi: ## Regenerate docs/openapi.json from the live FastAPI app
+	python3 scripts/dump_openapi.py
+	@echo "Wrote docs/openapi.json ($$(wc -c < docs/openapi.json) bytes)"
 
 revision: ## autogenerate migration: make revision m="add x"
 	docker compose exec api alembic revision --autogenerate -m "$(m)"

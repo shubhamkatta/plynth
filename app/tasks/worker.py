@@ -7,6 +7,7 @@ with `await arq_pool.enqueue_job("name", ...)`.
 """
 
 from datetime import UTC, datetime
+from typing import Any
 
 from arq import cron
 from arq.connections import RedisSettings
@@ -21,22 +22,22 @@ configure_logging()
 log = get_logger("worker")
 
 
-async def startup(ctx):
+async def startup(ctx: dict[str, Any]) -> None:
     log.info("worker.startup")
 
 
-async def shutdown(ctx):
+async def shutdown(ctx: dict[str, Any]) -> None:
     log.info("worker.shutdown")
 
 
-async def task_check_grace_period(ctx) -> int:
+async def task_check_grace_period(ctx: dict[str, Any]) -> int:
     async with session_scope() as db:
         n = await sub_svc.suspend_if_grace_expired(db)
     log.info("task.grace_period.swept", suspended=n)
     return n
 
 
-async def task_send_payment_reminders(ctx) -> int:
+async def task_send_payment_reminders(ctx: dict[str, Any]) -> int:
     async with session_scope() as db:
         return await payment_reminders.dispatch_due_reminders(db, now=datetime.now(UTC))
 

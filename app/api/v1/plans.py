@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import CurrentUser, RequireProduct, actor_id, require_permission
+from app.models.plan import Plan
 from app.schemas.plan import PlanCreate, PlanResponse, PlanUpdate
 from app.services import plan as plan_svc
 
@@ -21,7 +22,7 @@ router = APIRouter()
 async def list_plans(
     product_id: RequireProduct,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> list:
+) -> list[Plan]:
     return await plan_svc.list_plans(db, product_id=product_id, only_public=True)
 
 
@@ -29,7 +30,7 @@ async def list_plans(
              dependencies=[Depends(require_permission("plans:write"))])
 async def create_plan(
     payload: PlanCreate, user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
-) -> object:
+) -> Plan:
     return await plan_svc.create_plan(
         db, payload, product_id=user.product_id, actor_user_id=actor_id(user),
     )
@@ -42,7 +43,7 @@ async def update_plan(
     payload: PlanUpdate,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> object:
+) -> Plan:
     return await plan_svc.update_plan(
         db, code, payload, product_id=user.product_id, actor_user_id=actor_id(user),
     )

@@ -2,6 +2,7 @@
 permission checks, platform-admin token.
 """
 
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -327,7 +328,9 @@ CurrentTenantId = Annotated[UUID, Depends(get_current_tenant_id)]
 
 # --- permission -----------------------------------------------------------------
 
-def require_permission(permission: str):
+def require_permission(
+    permission: str,
+) -> Callable[..., Awaitable[User]]:
     """Dependency factory: ensures current user has the given permission
     *in the current tenant scope* (which switches when acting-as)."""
     async def _checker(

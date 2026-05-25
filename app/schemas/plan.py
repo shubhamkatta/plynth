@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -12,7 +13,7 @@ class PlanFeatureIn(BaseModel):
     limit_value: Decimal | None = None
     credit_amount: Decimal | None = None
     is_hard_limit: bool = True
-    meta: dict = Field(default_factory=dict)
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlanFeatureOut(PlanFeatureIn):
@@ -29,7 +30,7 @@ class PlanCreate(BaseModel):
     trial_days: int = Field(default=0, ge=0)
     is_public: bool = True
     features: list[PlanFeatureIn] = Field(default_factory=list)
-    provider_refs: dict = Field(default_factory=dict)
+    provider_refs: dict[str, Any] = Field(default_factory=dict)
 
 
 class PlanUpdate(BaseModel):
@@ -38,7 +39,7 @@ class PlanUpdate(BaseModel):
     price_cents: int | None = None
     is_public: bool | None = None
     is_active: bool | None = None
-    provider_refs: dict | None = None
+    provider_refs: dict[str, Any] | None = None
 
 
 class PlanResponse(TimestampedResponse):

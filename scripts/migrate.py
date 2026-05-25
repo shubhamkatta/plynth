@@ -75,6 +75,130 @@ MIGRATIONS: list[tuple[str, str]] = [
           ON password_reset_tokens (product_id);
         """,
     ),
+    # Jobs API (per docs/architecture.md § 6.2). Idempotency is a partial
+    # unique index scoped to (product_id, tenant_id, type, idempotency_key).
+    (
+        "0005_jobs",
+        """
+        CREATE TABLE IF NOT EXISTS jobs (
+          id                    UUID PRIMARY KEY,
+          product_id            UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          tenant_id             UUID NOT NULL REFERENCES tenants(id)  ON DELETE CASCADE,
+          type                  VARCHAR(64)  NOT NULL,
+          status                VARCHAR(32)  NOT NULL DEFAULT 'queued',
+          payload               JSONB        NOT NULL DEFAULT '{}'::jsonb,
+          result                JSONB,
+          error                 JSONB,
+          progress              INTEGER      NOT NULL DEFAULT 0,
+          idempotency_key       VARCHAR(128),
+          reference             VARCHAR(128),
+          callback_url          VARCHAR(512),
+          credits_charged       NUMERIC(18,4),
+          queued_at             TIMESTAMPTZ  NOT NULL,
+          started_at            TIMESTAMPTZ,
+          completed_at          TIMESTAMPTZ,
+          expires_at            TIMESTAMPTZ  NOT NULL,
+          created_by_user_id    UUID         REFERENCES users(id)   ON DELETE SET NULL,
+          acting_from_tenant_id UUID         REFERENCES tenants(id) ON DELETE SET NULL,
+          created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_jobs_product_id              ON jobs (product_id);
+        CREATE INDEX IF NOT EXISTS ix_jobs_tenant_id               ON jobs (tenant_id);
+        CREATE INDEX IF NOT EXISTS ix_jobs_type                    ON jobs (type);
+        CREATE INDEX IF NOT EXISTS ix_jobs_reference               ON jobs (reference);
+        CREATE INDEX IF NOT EXISTS ix_jobs_created_by_user_id      ON jobs (created_by_user_id);
+        CREATE INDEX IF NOT EXISTS ix_jobs_product_tenant_status   ON jobs (product_id, tenant_id, status);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_idempotency
+          ON jobs (product_id, tenant_id, type, idempotency_key)
+          WHERE idempotency_key IS NOT NULL
+        """,
+    ),
+    # Storage API (per docs/architecture.md § 6.3). Per-tenant key/value
+    # document store with collections, optimistic concurrency (version),
+    # optional TTL, and a (collection, updated_at) sync-since index.
+    (
+        "0006_storage",
+        """
+        CREATE TABLE IF NOT EXISTS storage_collections (
+          id                  UUID PRIMARY KEY,
+          product_id          UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          tenant_id           UUID NOT NULL REFERENCES tenants(id)  ON DELETE CASCADE,
+          name                VARCHAR(64)  NOT NULL,
+          default_ttl_seconds INTEGER      NOT NULL DEFAULT 0,
+          description         VARCHAR(255),
+          settings            JSONB        NOT NULL DEFAULT '{}'::jsonb,
+          created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_storage_collections_product_id ON storage_collections (product_id);
+        CREATE INDEX IF NOT EXISTS ix_storage_collections_tenant_id  ON storage_collections (tenant_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_storage_collections_name
+          ON storage_collections (product_id, tenant_id, name);
+
+        CREATE TABLE IF NOT EXISTS storage_documents (
+          id            UUID PRIMARY KEY,
+          product_id    UUID NOT NULL REFERENCES products(id)            ON DELETE CASCADE,
+          tenant_id     UUID NOT NULL REFERENCES tenants(id)             ON DELETE CASCADE,
+          collection_id UUID NOT NULL REFERENCES storage_collections(id) ON DELETE CASCADE,
+          key           VARCHAR(255) NOT NULL,
+          value         JSONB        NOT NULL DEFAULT '{}'::jsonb,
+          version       INTEGER      NOT NULL DEFAULT 1,
+          expires_at    TIMESTAMPTZ,
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_storage_documents_product_id    ON storage_documents (product_id);
+        CREATE INDEX IF NOT EXISTS ix_storage_documents_tenant_id     ON storage_documents (tenant_id);
+        CREATE INDEX IF NOT EXISTS ix_storage_documents_collection_id ON storage_documents (collection_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_storage_documents_key
+          ON storage_documents (product_id, tenant_id, collection_id, key);
+        CREATE INDEX IF NOT EXISTS ix_storage_documents_sync
+          ON storage_documents (product_id, tenant_id, collection_id, updated_at)
+        """,
+    ),
+    # Outbound per-product webhooks. Endpoint config + delivery history.
+    # Secret stored as plaintext (required for HMAC re-signing on dispatch);
+    # never exposed via list/get responses — only once on create.
+    (
+        "0007_webhooks",
+        """
+        CREATE TABLE IF NOT EXISTS webhook_endpoints (
+          id          UUID PRIMARY KEY,
+          product_id  UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          url         VARCHAR(2048) NOT NULL,
+          description VARCHAR(255),
+          secret      VARCHAR(64) NOT NULL,
+          events      JSONB NOT NULL DEFAULT '[]'::jsonb,
+          is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_webhook_endpoints_product_id
+          ON webhook_endpoints (product_id);
+
+        CREATE TABLE IF NOT EXISTS webhook_deliveries (
+          id              UUID PRIMARY KEY,
+          endpoint_id     UUID NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+          product_id      UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          event_type      VARCHAR(64) NOT NULL,
+          payload         JSONB NOT NULL DEFAULT '{}'::jsonb,
+          request_id      VARCHAR(64),
+          attempt         INTEGER NOT NULL DEFAULT 0,
+          status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+          response_status INTEGER,
+          response_body   TEXT,
+          delivered_at    TIMESTAMPTZ,
+          next_retry_at   TIMESTAMPTZ,
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_webhook_deliveries_product_created
+          ON webhook_deliveries (product_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS ix_webhook_deliveries_endpoint_id
+          ON webhook_deliveries (endpoint_id)
+        """,
+    ),
 ]
 
 

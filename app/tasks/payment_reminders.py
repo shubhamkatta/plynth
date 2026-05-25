@@ -6,6 +6,7 @@ Redis SETNX guard.
 """
 
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,7 @@ from app.providers import notifications
 REMINDER_OFFSETS_DAYS = [-3, 0, 3, 7]  # before due, on due, after due
 
 
-async def _already_sent(invoice_id, offset: int) -> bool:
+async def _already_sent(invoice_id: UUID, offset: int) -> bool:
     key = f"reminder:{invoice_id}:{offset}"
     # SETNX with 30-day expiry.
     return not await get_redis().set(key, "1", nx=True, ex=60 * 60 * 24 * 30)

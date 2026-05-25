@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
@@ -56,4 +57,4 @@ class Invoice(UUIDPKMixin, TimestampMixin, ProductScopedMixin, TenantScopedMixin
     provider: Mapped[str] = mapped_column(String(32), default="mock", nullable=False)
     provider_invoice_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     hosted_invoice_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

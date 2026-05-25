@@ -1,12 +1,25 @@
-<h1 align="center">🐢 Plynth</h1>
+<h1 align="center">🏛️ Plynth</h1>
 
 <p align="center"><strong>Stop rebuilding the same SaaS plumbing.</strong></p>
+
+<pre align="center">
+   [ App ]   [ App ]   [ App ]   [ App ]
+      │         │         │         │
+══════╪═════════╪═════════╪═════════╪══════
+║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
+║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
+║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
+═══════════════════════════════════════════
+              P  L  Y  N  T  H
+  identity · tenancy · rbac · billing · audit
+═══════════════════════════════════════════
+</pre>
 
 <p align="center">
 A reusable, batteries-included backend for SaaS founders — identity, multi-tenancy, RBAC, plans, subscriptions, billing, credits, audit, jobs — packaged so <strong>one deployment hosts many independent products</strong>. Fork it, drop your product code in, ship in a week instead of six months.
 </p>
 
-<p align="center"><em>Turtles all the way down — every product on the same dependable shell.</em></p>
+<p align="center"><em>One foundation. Many products. Drop yours in.</em></p>
 
 <p align="center">
   <a href="https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml/badge.svg"></a>

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ---------- base ----------
-FROM python:3.12-slim AS base
+FROM python:3.14-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -24,7 +24,7 @@ RUN pip install --upgrade pip hatchling \
     "email-validator>=2.2" "orjson>=3.10" "tenacity>=9.0" "stripe>=11.4"
 
 # ---------- runtime ----------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/usr/local/bin:$PATH

@@ -20,7 +20,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "@mantine/core":          "^7.13.4",
+    "@mantine/core":          "^9.2.1",
     "@mantine/form":          "^7.13.4",
     "@mantine/hooks":         "^7.13.4",
     "@mantine/modals":        "^7.13.4",

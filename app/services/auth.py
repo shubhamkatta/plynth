@@ -30,12 +30,29 @@ from app.core.tenant import (
     set_current_product,
     set_current_tenant,
 )
+from app.models.product import Product
 from app.models.tenant import Tenant, TenantType
 from app.models.user import PasswordResetToken, RefreshToken, User
 from app.services import audit, rbac, tenant as tenant_svc
 from app.services.subscription import start_trial
 
 log = structlog.get_logger("auth")
+
+
+async def _refresh_ttl_seconds(db: AsyncSession, product_id: UUID) -> int:
+    """Per-product refresh-token TTL. Reads
+    `Product.settings.auth.refresh_ttl_days` if set, otherwise falls back
+    to the platform-wide `JWT_REFRESH_TTL_SECONDS` (30 days by default).
+
+    Bounded to [1 day, 365 days] to prevent typos from creating tokens
+    that effectively never expire or expire immediately."""
+    with bypass_product(), bypass_tenant():
+        product = await db.get(Product, product_id)
+    if product is not None:
+        days = (product.settings or {}).get("auth", {}).get("refresh_ttl_days")
+        if isinstance(days, int) and 1 <= days <= 365:
+            return days * 86400
+    return settings.jwt_refresh_ttl_seconds
 
 
 async def _audit_in_new_tx(**kwargs) -> None:
@@ -205,6 +222,7 @@ async def login(
     refresh_token, jti, refresh_exp = issue_token(
         subject=user.id, tenant_id=user.tenant_id,
         product_id=user.product_id, typ="refresh",
+        ttl_seconds=await _refresh_ttl_seconds(db, user.product_id),
     )
     db.add(
         RefreshToken(
@@ -255,6 +273,7 @@ async def refresh(
     new_refresh, new_jti, new_exp = issue_token(
         subject=user.id, tenant_id=user.tenant_id,
         product_id=user.product_id, typ="refresh",
+        ttl_seconds=await _refresh_ttl_seconds(db, user.product_id),
     )
     db.add(RefreshToken(
         product_id=user.product_id, user_id=user.id, jti=new_jti, expires_at=new_exp,
@@ -511,6 +530,7 @@ async def login_with_google(
     refresh_token, refresh_jti, refresh_exp = issue_token(
         subject=user.id, tenant_id=user.tenant_id,
         product_id=user.product_id, typ="refresh",
+        ttl_seconds=await _refresh_ttl_seconds(db, user.product_id),
     )
     db.add(RefreshToken(
         product_id=user.product_id, user_id=user.id, jti=refresh_jti,

@@ -18,6 +18,17 @@ class ProductCreate(BaseModel):
     tenant_type: TenantType = TenantType.COMPANY
 
 
+class ProductUpdate(BaseModel):
+    """Mutate an existing product. `settings` is shallow-merged on top
+    of the existing JSONB so partial patches don't wipe unrelated keys
+    — e.g. updating `auth.refresh_ttl_days` leaves `features.*` alone."""
+    name:        str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=512)
+    status:      ProductStatus | None = None
+    is_active:   bool | None = None
+    settings:    dict | None = None
+
+
 class ProductResponse(TimestampedResponse):
     name: str
     slug: str

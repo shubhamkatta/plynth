@@ -56,12 +56,17 @@ def issue_token(
     product_id: UUID | str | None,
     typ: TokenType = "access",
     extra: dict[str, Any] | None = None,
+    ttl_seconds: int | None = None,
 ) -> tuple[str, str, datetime]:
     """Return `(jwt_string, jti, expires_at)`. Encodes:
     `sub` (user), `tid` (tenant), `pid` (product), `typ`, `iat`, `exp`, `jti`.
+
+    `ttl_seconds` overrides the platform-wide default — services pass a
+    per-product TTL here (e.g. for refresh tokens whose lifetime is
+    configurable per Product.settings.auth.refresh_ttl_days).
     """
     now = datetime.now(UTC)
-    exp = now + timedelta(seconds=_ttl(typ))
+    exp = now + timedelta(seconds=ttl_seconds if ttl_seconds is not None else _ttl(typ))
     jti = str(uuid4())
     payload: dict[str, Any] = {
         "sub": str(subject),

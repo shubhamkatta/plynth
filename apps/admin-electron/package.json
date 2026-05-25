@@ -22,7 +22,7 @@
   "dependencies": {
     "@mantine/core":          "^7.13.4",
     "@mantine/form":          "^7.13.4",
-    "@mantine/hooks":         "^7.13.4",
+    "@mantine/hooks":         "^9.2.1",
     "@mantine/modals":        "^7.13.4",
     "@mantine/notifications": "^7.13.4",
     "@tabler/icons-react":    "^3.20.0",

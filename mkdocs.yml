@@ -1,0 +1,106 @@
+site_name: Plynth
+site_description: A drop-in multi-tenant, multi-product SaaS scaffold.
+site_url: https://shubhamkatta.github.io/plynth/
+site_author: Shubham Katta
+repo_name: shubhamkatta/plynth
+repo_url: https://github.com/shubhamkatta/plynth
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  logo: assets/banner-light.svg
+  favicon: assets/banner-light.svg
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - content.action.view
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/shubhamkatta/plynth
+  generator: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Architecture: architecture.md
+  - Integration guide: INTEGRATION.md
+  - Concepts:
+      - Multi-product: multi-product.md
+      - Multi-tenancy: multi-tenancy.md
+      - RBAC: rbac.md
+      - Billing: billing.md
+      - Credits: credits.md
+  - API reference: api-reference.md
+  - Deployment:
+      - Production checklist: deployment.md
+      - Fly.io: deploy-fly.md
+      - DigitalOcean: deploy-digitalocean.md
+      - Hosting + integration: hosting-and-integration.md

@@ -1,0 +1,113 @@
+/* Plynth docs — brand overrides for Material for MkDocs.
+ * Keep additions surgical: each rule earns its place with a one-line comment. */
+
+/* Refine the indigo primary to sit closer to the banner SVG foreground (#0d1117). */
+:root {
+  --md-primary-fg-color: #1f2540;
+  --md-primary-fg-color--light: #2e3556;
+  --md-primary-fg-color--dark: #14182b;
+  --md-accent-fg-color: #4f46e5;
+  --md-typeset-a-color: #4338ca;
+}
+
+/* Dark scheme: lift link/accent colors so they don't disappear on #0d1117-style backgrounds. */
+[data-md-color-scheme="slate"] {
+  --md-accent-fg-color: #818cf8;
+  --md-typeset-a-color: #a5b4fc;
+}
+
+/* Brand selection highlight — indigo at low alpha so text stays readable. */
+::selection {
+  background: rgba(79, 70, 229, 0.25);
+  color: inherit;
+}
+
+/* Hero on the landing page: the "Plynth" h1 gets weight, breathing room, larger emoji. */
+.md-typeset h1:first-of-type {
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 1.2em 0 0.6em;
+  letter-spacing: -0.01em;
+}
+
+/* The leading emoji in the hero renders ~20% larger for visual anchor. */
+.md-typeset h1:first-of-type::first-letter {
+  font-size: 1.2em;
+}
+
+/* Grid cards (Material's .grid.cards): subtle bordered cards instead of flat fills. */
+.md-typeset .grid.cards > :is(ul, ol) > li,
+.md-typeset .grid.cards > .card {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+/* Card hover: 2px translate + accent border, no garish shadow. */
+.md-typeset .grid.cards > :is(ul, ol) > li:hover,
+.md-typeset .grid.cards > .card:hover {
+  transform: translateY(-2px);
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+/* Admonitions: tighter padding so they don't dominate the page. */
+.md-typeset .admonition,
+.md-typeset details {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.35rem;
+}
+
+/* Soften the admonition title bar — lower-alpha tinted background. */
+.md-typeset .admonition-title,
+.md-typeset summary {
+  padding: 0.4rem 0.6rem 0.4rem 2rem;
+  background-color: rgba(79, 70, 229, 0.06);
+  font-weight: 600;
+}
+
+/* Tables: tabular-nums so versions and counts line up across rows. */
+.md-typeset table:not([class]) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mermaid: vertical breathing room + horizontal scroll on small screens. */
+.md-typeset .mermaid {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+/* Code blocks: slightly more padding, bumped weight so mono doesn't look thin. */
+.md-typeset pre > code {
+  padding: 0.9rem 1rem;
+  font-weight: 450;
+}
+
+/* Inline code: matched weight bump to stay readable in prose. */
+.md-typeset code {
+  font-weight: 450;
+  background-color: var(--md-code-bg-color);
+}
+
+/* Defensive: hide the auto-injected "Made with Material for MkDocs" copyright sibling. */
+.md-footer-meta__inner > .md-copyright + * {
+  display: none;
+}
+
+/* Defensive secondary: some Material versions render generator inside .md-copyright itself. */
+.md-copyright__highlight + * {
+  display: none;
+}
+
+/* Navigation tabs: subtle underline accent on active so the brand color shows up in the header. */
+.md-tabs__link--active {
+  border-bottom: 2px solid var(--md-accent-fg-color);
+}
+
+/* Search input focus: indigo ring matching brand. */
+.md-search__input:focus {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 1px;
+}

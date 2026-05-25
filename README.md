@@ -2,18 +2,12 @@
 
 <p align="center"><strong>Stop rebuilding the same SaaS plumbing.</strong></p>
 
-<pre align="center">
-   [ App ]   [ App ]   [ App ]   [ App ]
-      │         │         │         │
-══════╪═════════╪═════════╪═════════╪══════
-║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
-║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
-║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║  ║
-═══════════════════════════════════════════
-                P L Y N T H
-identity · tenancy · rbac · billing · audit
-═══════════════════════════════════════════
-</pre>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+    <img alt="Plynth — multi-product SaaS scaffold" src="docs/assets/banner-light.svg" width="720">
+  </picture>
+</p>
 
 <p align="center">
 A reusable, batteries-included backend for SaaS founders — identity, multi-tenancy, RBAC, plans, subscriptions, billing, credits, audit, jobs — packaged so <strong>one deployment hosts many independent products</strong>. Fork it, drop your product code in, ship in a week instead of six months.
@@ -28,6 +22,24 @@ A reusable, batteries-included backend for SaaS founders — identity, multi-ten
   <a href="https://github.com/shubhamkatta/plynth/blob/main/CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
   <a href="https://github.com/shubhamkatta/plynth/releases"><img alt="Release" src="https://img.shields.io/github/v/release/shubhamkatta/plynth?include_prereleases&sort=semver"></a>
 </p>
+
+<details>
+<summary><strong>📖 Contents</strong></summary>
+
+- [Why Plynth?](#why-plynth)
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Compared to alternatives](#compared-to-alternatives)
+- [Stack](#stack)
+- [Quickstart (5 minutes)](#quickstart-5-minutes)
+- [The Electron admin (optional)](#the-electron-admin-optional)
+- [Architecture](#architecture)
+- [What's intentionally NOT in the scaffold](#whats-intentionally-not-in-the-scaffold)
+- [Contributing](#contributing)
+- [License](#license)
+- [Docs index](#docs-index)
+
+</details>
 
 ---
 
@@ -51,6 +63,46 @@ table on `(product_id, tenant_id)` so you can run an internal tool, a B2C app,
 and a B2B platform on one Postgres + one worker pool with zero cross-bleed. Add
 a new product with one admin call. Fork it, drop your product code under
 `app/products/<name>/`, and ship in a week instead of six months.
+
+## How it works
+
+One deployment hosts many products. Every domain table (users, tenants, plans, subscriptions, credits, audit) keys off `(product_id, tenant_id)`, so isolation is enforced at the repository layer — there is no path through the API that crosses a product boundary without an explicit `bypass_product()` block (reviewed line by line).
+
+```mermaid
+flowchart TB
+    C1[ChatBot Web]:::client
+    C2[Notes Mobile]:::client
+    C3[Your CRM]:::client
+
+    C1 -->|X-Product-Slug: chatbot| API
+    C2 -->|X-Product-Slug: notes| API
+    C3 -->|X-Product-Slug: crm| API
+
+    subgraph Plynth["🏛️ Plynth — one deployment"]
+        API[FastAPI app<br/>auth · RBAC · tenant resolver]
+        subgraph P1[Product: chatbot]
+            T1[tenants · users · plans<br/>subs · credits · audit]
+        end
+        subgraph P2[Product: notes]
+            T2[tenants · users · plans<br/>subs · credits · audit]
+        end
+        subgraph P3[Product: crm]
+            T3[tenants · users · plans<br/>subs · credits · audit]
+        end
+        API --> P1
+        API --> P2
+        API --> P3
+    end
+
+    P1 --> PG[(Postgres 16)]
+    P2 --> PG
+    P3 --> PG
+    Plynth --> RD[(Redis 7)]
+
+    classDef client fill:transparent,stroke:#888,stroke-dasharray:3 3
+```
+
+The same FastAPI process handles every product. Tenant + product context is set per-request from the `X-Product-Slug` header (public routes) or the `pid` JWT claim (authenticated routes); the two must agree. Adding a new product is one admin call — no infrastructure work, no schema change, no new deployment.
 
 ## Features
 
@@ -111,6 +163,28 @@ a new product with one admin call. Fork it, drop your product code under
 - Dockerised. `make up`, `make migrate`, `make seed`, `make test`.
 - Autoreload, ruff, mypy, pytest. 170+ tests, runs in ~17s on Postgres.
 - Claude Code skills under `.claude/skills/` for extending the platform.
+
+## Compared to alternatives
+
+How Plynth stacks up against the common ways people approach this problem. Honest assessment — every alternative shines somewhere; pick what fits your shape.
+
+|                                            | **Plynth** | DIY (FastAPI / Express) | Supabase | Nhost  | PocketBase |
+| ------------------------------------------ | :--------: | :---------------------: | :------: | :----: | :--------: |
+| Many independent products on one deploy    |     ✅     |           🔨            |    ❌    |   ❌   |     ❌     |
+| Self-host (one Docker Compose)             |     ✅     |           ✅            | ⚠️ heavy |  ⚠️    |     ✅     |
+| Strict `(product, tenant)` isolation in the ORM | ✅    |           🔨            | ⚠️ RLS-only |  ⚠️ |     ❌     |
+| RBAC + custom roles out of the box         |     ✅     |           🔨            | ⚠️ basic | ⚠️ basic |    ❌     |
+| Plans + subscription state machine         |     ✅     |           🔨            |    ❌    |  ⚠️    |     ❌     |
+| Metered credits + append-only ledger       |     ✅     |           🔨            |    ❌    |   ❌   |     ❌     |
+| Audit log of every mutation                |     ✅     |           🔨            |   ⚠️    |   ❌   |     ❌     |
+| Bring-your-own-frontend (backend only)     |     ✅     |           ✅            | ❌ opinionated | ❌ |   ⚠️     |
+| No vendor lock-in (own your Postgres)      |     ✅     |           ✅            | ⚠️ Postgres-on-Supabase | ❌ | ✅ |
+| Python-native (FastAPI + SQLAlchemy)       |     ✅     |           ✅            |   ❌ TS  |  ❌ TS |   ❌ Go    |
+| Reference desktop admin included           |     ✅     |           ❌            |   ❌    |   ❌   |    ⚠️ web |
+
+Legend: ✅ shipped · ⚠️ partial or opinionated · ❌ not supported · 🔨 you build it
+
+**The honest summary:** if you're building one product and want a hosted backend, Supabase or Nhost is faster. If you're shipping multiple SaaS products on shared infra, want full ownership of identity + billing + audit, and prefer Python, that's where Plynth wins.
 
 ## Stack
 

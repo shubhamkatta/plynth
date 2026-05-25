@@ -86,20 +86,15 @@ jobs:
         run: make typecheck
 
       - name: Test (pytest)
-        run: pytest -q --cov=app --cov-report=term-missing
+        run: pytest -q --cov=app --cov-report=term-missing --cov-report=xml
 
-      - name: Generate coverage badge
+      - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
-        run: |
-          mkdir -p docs/assets
-          pip install coverage-badge
-          coverage-badge -f -o docs/assets/coverage.svg
-      - name: Upload coverage badge
-        if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: codecov/codecov-action@v4
         with:
-          name: coverage-badge
-          path: docs/assets/coverage.svg
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}   # optional; public-repo uploads work without a token too
 
   electron:
     name: electron admin

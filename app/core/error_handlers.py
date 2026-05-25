@@ -23,7 +23,7 @@ from typing import Any
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse  # noqa: F401  (re-exported via FastAPI)
+from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 

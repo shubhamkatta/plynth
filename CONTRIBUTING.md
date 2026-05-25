@@ -201,6 +201,22 @@ Before you click "Create pull request", confirm:
 CI will re-run lint / typecheck / tests. Reviewers will read the PR
 description, the diff, and — for any contract change — the docs diff.
 
+
+
+## Type hygiene (mypy)
+
+`make typecheck` is run in CI but is **advisory** for now — the
+pre-1.0 codebase has known type-annotation gaps we're chipping away
+at. PRs that **don't introduce new mypy errors** are happily merged.
+PRs that fix existing ones are doubly welcome. The plan is to flip
+mypy to gating once `make typecheck` is clean.
+
+Tightening sequence we're following:
+1. Annotate every new function with arg + return types.
+2. Resolve `Subscription | None` union-attr warnings as we touch each service.
+3. Lift `check_untyped_defs` back on once the count is < 5 errors.
+4. Restore `strict = true` in `pyproject.toml`.
+
 ## Reporting bugs / requesting features
 
 Use the issue templates under

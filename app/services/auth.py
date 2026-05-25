@@ -33,7 +33,8 @@ from app.core.tenant import (
 from app.models.product import Product
 from app.models.tenant import Tenant, TenantType
 from app.models.user import PasswordResetToken, RefreshToken, User
-from app.services import audit, rbac, tenant as tenant_svc
+from app.services import audit, rbac
+from app.services import tenant as tenant_svc
 from app.services.subscription import start_trial
 
 log = structlog.get_logger("auth")

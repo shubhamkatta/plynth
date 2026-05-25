@@ -19,7 +19,7 @@ log = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # noqa: ARG001
+async def lifespan(app: FastAPI):
     configure_logging()
     log.info("startup", env=settings.app_env, version="0.1.0")
     yield

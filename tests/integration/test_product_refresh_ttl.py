@@ -6,7 +6,7 @@ the platform-wide `JWT_REFRESH_TTL_SECONDS` (30 days). Set via
 that deep-merges into the existing JSONB.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import jwt
 import pytest

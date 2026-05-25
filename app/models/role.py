@@ -34,10 +34,10 @@ class Role(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    permissions: Mapped[list["RolePermission"]] = relationship(
+    permissions: Mapped[list[RolePermission]] = relationship(
         back_populates="role", cascade="all, delete-orphan"
     )
-    bindings: Mapped[list["UserRole"]] = relationship(
+    bindings: Mapped[list[UserRole]] = relationship(
         back_populates="role", cascade="all, delete-orphan"
     )
 
@@ -63,5 +63,5 @@ class UserRole(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
         PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True
     )
 
-    user: Mapped["User"] = relationship(back_populates="role_bindings")
-    role: Mapped["Role"] = relationship(back_populates="bindings")
+    user: Mapped[User] = relationship(back_populates="role_bindings")
+    role: Mapped[Role] = relationship(back_populates="bindings")

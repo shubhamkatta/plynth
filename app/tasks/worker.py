@@ -21,22 +21,22 @@ configure_logging()
 log = get_logger("worker")
 
 
-async def startup(ctx):  # noqa: ANN001
+async def startup(ctx):
     log.info("worker.startup")
 
 
-async def shutdown(ctx):  # noqa: ANN001
+async def shutdown(ctx):
     log.info("worker.shutdown")
 
 
-async def task_check_grace_period(ctx) -> int:  # noqa: ANN001
+async def task_check_grace_period(ctx) -> int:
     async with session_scope() as db:
         n = await sub_svc.suspend_if_grace_expired(db)
     log.info("task.grace_period.swept", suspended=n)
     return n
 
 
-async def task_send_payment_reminders(ctx) -> int:  # noqa: ANN001
+async def task_send_payment_reminders(ctx) -> int:
     async with session_scope() as db:
         return await payment_reminders.dispatch_due_reminders(db, now=datetime.now(UTC))
 

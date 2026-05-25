@@ -46,8 +46,8 @@ class User(
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    tenant: Mapped["Tenant"] = relationship(back_populates="users")
-    role_bindings: Mapped[list["UserRole"]] = relationship(
+    tenant: Mapped[Tenant] = relationship(back_populates="users")
+    role_bindings: Mapped[list[UserRole]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 

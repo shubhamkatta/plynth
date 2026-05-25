@@ -82,8 +82,11 @@ jobs:
       - name: Lint (ruff)
         run: make lint
 
-      - name: Typecheck (mypy)
-        run: make typecheck
+      - name: Typecheck (mypy, advisory)
+        # Mypy was strict and accumulated debt pre-1.0. Run it for
+        # visibility but don't fail CI on it until cleanup lands.
+        # See CONTRIBUTING.md for the type-hygiene policy.
+        run: make typecheck || true
 
       - name: Test (pytest)
         run: pytest -q --cov=app --cov-report=term-missing

@@ -13,7 +13,6 @@ from app.models.tenant import TenantType
 from app.schemas.plan import PlanCreate, PlanUpdate
 from app.services import audit
 
-
 # Standard plan templates seeded on product creation when the admin opts
 # in (POST /admin/products with seed_plans=True). Shape mirrors PlanCreate.
 # Keep prices conservative — admin can edit post-create from /plans.

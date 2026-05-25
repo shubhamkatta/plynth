@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, ProductScopedMixin, TimestampMixin, UUIDPKMixin
@@ -44,10 +45,10 @@ class Plan(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
     # Provider IDs (Stripe price ID, etc) — keyed by provider name.
     provider_refs: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
-    features: Mapped[list["PlanFeature"]] = relationship(
+    features: Mapped[list[PlanFeature]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
     )
-    subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="plan")
+    subscriptions: Mapped[list[Subscription]] = relationship(back_populates="plan")
 
 
 class PlanFeature(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):

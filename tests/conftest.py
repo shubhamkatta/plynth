@@ -26,18 +26,17 @@ os.environ["APP_DEBUG"] = "false"
 os.environ["RATE_LIMIT_PER_MINUTE"] = "10000"  # effectively disable for tests
 os.environ["PLATFORM_ADMIN_TOKEN"] = "test-platform-admin-token"
 
-from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 
-from app.core.database import engine, session_scope  # noqa: E402
-from app.core.redis import get_redis  # noqa: E402
-from app.core.tenant import bypass_product, bypass_tenant  # noqa: E402
-from app.main import app  # noqa: E402
-from app.models import Base  # noqa: E402
-from app.models.plan import BillingInterval, Plan, PlanFeature  # noqa: E402
-from app.models.product import Product, ProductStatus  # noqa: E402
-from app.services import product as product_svc  # noqa: E402
-from app.services import rbac  # noqa: E402
+from app.core.database import engine, session_scope
+from app.core.redis import get_redis
+from app.core.tenant import bypass_product, bypass_tenant
+from app.main import app
+from app.models import Base
+from app.models.plan import BillingInterval, Plan, PlanFeature
+from app.models.product import Product, ProductStatus
+from app.services import rbac
 
 # Tables wiped between tests (tenant + product data + audit etc).
 TENANT_TABLES = (

@@ -18,7 +18,8 @@ from app.schemas.tenant import (
     TenantResponse,
     TenantUpdate,
 )
-from app.services import audit, rbac, tenant as tenant_svc
+from app.services import audit, rbac
+from app.services import tenant as tenant_svc
 from app.services.subscription import start_trial
 
 router = APIRouter()

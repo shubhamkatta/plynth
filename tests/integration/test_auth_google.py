@@ -8,8 +8,6 @@ Two paths:
 Google's HTTP endpoints are mocked with respx — no network in tests.
 """
 
-import json
-from uuid import UUID
 
 import pytest
 import respx
@@ -20,7 +18,6 @@ from app.core.database import session_scope
 from app.core.tenant import bypass_product, bypass_tenant
 from app.models.product import Product
 from tests.conftest import product_headers, register_tenant
-
 
 GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"

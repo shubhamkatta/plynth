@@ -7,13 +7,13 @@ Tenants belong to exactly one Product — same slug can repeat across products.
 from __future__ import annotations
 
 import enum
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from datetime import datetime
-
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import (
@@ -87,13 +87,13 @@ class Tenant(UUIDPKMixin, TimestampMixin, SoftDeleteMixin, ProductScopedMixin, B
     def is_individual(self) -> bool:
         return self.type == TenantType.INDIVIDUAL
 
-    parent: Mapped["Tenant | None"] = relationship(
+    parent: Mapped[Tenant | None] = relationship(
         "Tenant", remote_side="Tenant.id", back_populates="children"
     )
-    children: Mapped[list["Tenant"]] = relationship(
+    children: Mapped[list[Tenant]] = relationship(
         "Tenant", back_populates="parent", cascade="all, delete-orphan"
     )
-    users: Mapped[list["User"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
-    subscription: Mapped["Subscription | None"] = relationship(
+    users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
+    subscription: Mapped[Subscription | None] = relationship(
         back_populates="tenant", uselist=False, cascade="all, delete-orphan"
     )

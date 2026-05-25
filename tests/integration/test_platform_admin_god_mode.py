@@ -225,7 +225,7 @@ async def test_admin_patch_tenant_expires_at_enforced_for_users(
 ) -> None:
     """Setting tenant.expires_at in the past denies all user auth in that
     tenant. Admin override (set to null or future) restores access."""
-    from datetime import datetime, timedelta, UTC
+    from datetime import UTC, datetime, timedelta
 
     # Bootstrap a product + tenant + owner.
     await client.post(

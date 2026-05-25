@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, ProductScopedMixin, TimestampMixin, UUIDPKMixin
@@ -61,8 +62,8 @@ class Subscription(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
 
     meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
-    tenant: Mapped["Tenant"] = relationship(back_populates="subscription")
-    plan: Mapped["Plan"] = relationship(back_populates="subscriptions")
+    tenant: Mapped[Tenant] = relationship(back_populates="subscription")
+    plan: Mapped[Plan] = relationship(back_populates="subscriptions")
 
     @property
     def has_access(self) -> bool:

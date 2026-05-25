@@ -29,7 +29,8 @@ from app.core.tenant import bypass_product, bypass_tenant, set_current_product
 from app.models.invoice import InvoiceStatus
 from app.models.subscription import Subscription
 from app.providers.billing import get_billing_provider
-from app.services import audit, billing as billing_svc
+from app.services import audit
+from app.services import billing as billing_svc
 
 router = APIRouter()
 log = structlog.get_logger("webhook")

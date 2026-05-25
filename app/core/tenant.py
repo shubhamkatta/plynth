@@ -11,9 +11,9 @@ wrap the call in `bypass_product()`. Cross-tenant access uses
 `bypass_tenant()`. Both are intentionally explicit — grep them.
 """
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Iterator
 from uuid import UUID
 
 _current_product: ContextVar[UUID | None] = ContextVar("current_product", default=None)

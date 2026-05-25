@@ -40,5 +40,5 @@ class RolePermission(UUIDPKMixin, TimestampMixin, Base):
         index=True,
     )
 
-    role: Mapped["Role"] = relationship(back_populates="permissions")
+    role: Mapped[Role] = relationship(back_populates="permissions")
     permission: Mapped[Permission] = relationship()

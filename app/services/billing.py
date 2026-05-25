@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenant import bypass_product, bypass_tenant
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.subscription import Subscription, SubscriptionStatus
-from app.services import audit, subscription as sub_svc
+from app.services import audit
+from app.services import subscription as sub_svc
 
 
 async def record_invoice(

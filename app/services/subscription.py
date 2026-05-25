@@ -23,7 +23,8 @@ from app.models.plan import Plan
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.tenant import Tenant
 from app.providers.billing import get_billing_provider
-from app.services import audit, credit, plan as plan_svc
+from app.services import audit, credit
+from app.services import plan as plan_svc
 
 
 async def start_trial(

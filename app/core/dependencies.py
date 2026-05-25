@@ -287,7 +287,7 @@ async def _enforce_tenant_expiry(db: AsyncSession, *, tenant_id: UUID) -> None:
     `expires_at`. Walks the parent chain too — a child tenant inherits its
     parent's expiry. Admin override: PATCH /tenants/{id} expires_at = null
     (or a future date)."""
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
     now = datetime.now(UTC)
     cursor: UUID | None = tenant_id
     seen: set[UUID] = set()

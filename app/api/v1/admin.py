@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_platform_admin
-from app.core.tenant import bypass_product, bypass_tenant
 from app.core.exceptions import NotFound, ValidationFailed
+from app.core.tenant import bypass_product, bypass_tenant
 from app.models.product import Product
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
 from app.services import plan as plan_svc

@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,7 +20,7 @@ log = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     log.info("startup", env=settings.app_env, version="0.1.0")
     yield

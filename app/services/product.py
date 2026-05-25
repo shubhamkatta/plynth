@@ -5,6 +5,7 @@ Platform-admin operations (create / list / disable) plus a small in-process
 """
 
 import json
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -25,9 +26,10 @@ async def list_products(db: AsyncSession) -> list[Product]:
 
 
 async def get_by_slug(db: AsyncSession, slug: str) -> Product | None:
-    return await db.scalar(
+    result: Product | None = await db.scalar(
         select(Product).where(Product.slug == slug, Product.deleted_at.is_(None))
     )
+    return result
 
 
 async def get_or_404(db: AsyncSession, product_id: UUID) -> Product:
@@ -43,7 +45,7 @@ async def create_product(
     name: str,
     slug: str,
     description: str | None = None,
-    settings: dict | None = None,
+    settings: dict[str, Any] | None = None,
 ) -> Product:
     if await get_by_slug(db, slug):
         raise Conflict(f"product slug {slug!r} already exists")

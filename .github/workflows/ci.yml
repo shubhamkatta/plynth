@@ -82,14 +82,24 @@ jobs:
       - name: Lint (ruff)
         run: make lint
 
-      - name: Typecheck (mypy, advisory)
-        # Mypy was strict and accumulated debt pre-1.0. Run it for
-        # visibility but don't fail CI on it until cleanup lands.
-        # See CONTRIBUTING.md for the type-hygiene policy.
-        run: make typecheck || true
+      - name: Typecheck (mypy)
+        run: make typecheck
 
       - name: Test (pytest)
         run: pytest -q --cov=app --cov-report=term-missing
+
+      - name: Generate coverage badge
+        if: matrix.python-version == '3.12'
+        run: |
+          mkdir -p docs/assets
+          pip install coverage-badge
+          coverage-badge -f -o docs/assets/coverage.svg
+      - name: Upload coverage badge
+        if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge
+          path: docs/assets/coverage.svg
 
   electron:
     name: electron admin

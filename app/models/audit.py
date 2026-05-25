@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import ForeignKey, String
@@ -41,4 +42,4 @@ class AuditLog(UUIDPKMixin, TimestampMixin, ProductScopedMixin, TenantScopedMixi
     resource_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     resource_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    diff: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    diff: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

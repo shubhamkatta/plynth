@@ -1,5 +1,6 @@
 """Plan catalog management. Plans are per-product."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,7 +17,7 @@ from app.services import audit
 # Standard plan templates seeded on product creation when the admin opts
 # in (POST /admin/products with seed_plans=True). Shape mirrors PlanCreate.
 # Keep prices conservative — admin can edit post-create from /plans.
-STANDARD_PLAN_TEMPLATES: dict[TenantType, list[dict]] = {
+STANDARD_PLAN_TEMPLATES: dict[TenantType, list[dict[str, Any]]] = {
     TenantType.COMPANY: [
         {"code": "free",       "name": "Free",       "price_cents":      0, "trial_days":  0, "is_public": True},
         {"code": "pro",        "name": "Pro",        "price_cents":   4900, "trial_days": 14, "is_public": True},

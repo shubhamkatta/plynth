@@ -7,6 +7,7 @@ Fails open if Redis is unreachable — better to serve traffic than to outage
 on a cache dependency. The Redis error is logged once per failure.
 """
 
+from collections.abc import Awaitable, Callable
 from time import time
 
 import structlog
@@ -29,7 +30,11 @@ def _client_key(request: Request) -> str:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         if request.url.path in {"/health", "/ready"}:
             return await call_next(request)
 

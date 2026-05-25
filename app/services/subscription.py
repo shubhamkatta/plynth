@@ -111,17 +111,19 @@ async def purchase(
     )
 
     with bypass_product(), bypass_tenant():
-        sub = await db.scalar(
+        existing = await db.scalar(
             select(Subscription).where(Subscription.tenant_id == tenant_id)
         )
-    is_new = sub is None
-    if is_new:
+    is_new = existing is None
+    if existing is None:
         sub = Subscription(
             product_id=tenant.product_id,
             tenant_id=tenant_id,
             plan_id=plan.id,
         )
         db.add(sub)
+    else:
+        sub = existing
 
     sub.plan = plan
     sub.status = SubscriptionStatus.ACTIVE

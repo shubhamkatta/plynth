@@ -23,7 +23,7 @@ router = APIRouter()
             dependencies=[Depends(require_permission("credits:read"))])
 async def list_wallets(
     user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]
-) -> list:
+) -> list[CreditWallet]:
     tid = current_tenant_id() or user.tenant_id
     return list((await db.scalars(
         select(CreditWallet).where(
@@ -39,7 +39,7 @@ async def ledger(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: int = 100,
-) -> list:
+) -> list[CreditLedger]:
     tid = current_tenant_id() or user.tenant_id
     return list((await db.scalars(
         select(CreditLedger)

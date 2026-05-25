@@ -16,6 +16,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -77,4 +78,4 @@ class CreditLedger(UUIDPKMixin, TimestampMixin, ProductScopedMixin, TenantScoped
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # External reference (e.g. invoice id, request id) to dedupe replays.
     reference: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

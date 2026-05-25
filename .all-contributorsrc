@@ -1,0 +1,22 @@
+{
+  "projectName": "plynth",
+  "projectOwner": "shubhamkatta",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": ["README.md"],
+  "imageSize": 80,
+  "commit": false,
+  "commitConvention": "angular",
+  "skipCi": true,
+  "contributorsPerLine": 7,
+  "contributorsSortAlphabetically": true,
+  "contributors": [
+    {
+      "login": "shubhamkatta",
+      "name": "Shubham Katta",
+      "avatar_url": "https://avatars.githubusercontent.com/u/0?v=4",
+      "profile": "https://github.com/shubhamkatta",
+      "contributions": ["maintenance", "code", "doc", "infra", "design"]
+    }
+  ]
+}

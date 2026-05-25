@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
@@ -28,5 +29,5 @@ class IdempotencyKey(UUIDPKMixin, TimestampMixin, ProductScopedMixin, TenantScop
     route: Mapped[str] = mapped_column(String(255), nullable=False)
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     response_status: Mapped[int] = mapped_column(Integer, nullable=False)
-    response_body: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    response_body: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

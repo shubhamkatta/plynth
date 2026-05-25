@@ -35,6 +35,14 @@ SYSTEM_PERMISSIONS: list[tuple[str, str]] = [
     ("credits:consume", "Consume credits"),
     ("credits:grant", "Grant credits (admin)"),
     ("audit:read", "Read audit log"),
+    # Jobs API (docs/architecture.md § 6.2)
+    ("jobs:read", "List + read background jobs"),
+    ("jobs:write", "Enqueue a background job"),
+    ("jobs:cancel", "Cancel a queued job"),
+    # Storage API (docs/architecture.md § 6.3)
+    ("storage:read", "Read storage collections and documents"),
+    ("storage:write", "Create collections + upsert documents"),
+    ("storage:delete", "Delete storage documents"),
 ]
 
 SYSTEM_ROLES: dict[str, list[str]] = {
@@ -47,12 +55,18 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "subscriptions:change", "subscriptions:cancel",
         "credits:read", "credits:grant",
         "audit:read",
+        # Jobs + Storage: admin gets the full surface.
+        "jobs:read", "jobs:write", "jobs:cancel",
+        "storage:read", "storage:write", "storage:delete",
     ],
     "member": [
         "tenants:read",
         "users:read",
         "subscriptions:read",
         "credits:read", "credits:consume",
+        # Members read jobs / storage but cannot enqueue or delete by default.
+        "jobs:read",
+        "storage:read",
     ],
 }
 

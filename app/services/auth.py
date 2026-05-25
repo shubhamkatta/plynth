@@ -7,6 +7,7 @@ explicit `product_id` from the route's `RequireProduct` dependency.
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_urlsafe
+from typing import Any
 from uuid import UUID, uuid4
 
 import jwt
@@ -56,7 +57,7 @@ async def _refresh_ttl_seconds(db: AsyncSession, product_id: UUID) -> int:
     return settings.jwt_refresh_ttl_seconds
 
 
-async def _audit_in_new_tx(**kwargs) -> None:
+async def _audit_in_new_tx(**kwargs: Any) -> None:
     """Write an audit entry in a fresh transaction so it survives the caller
     rolling back on exception (e.g. failed login)."""
     async with session_scope() as tx:

@@ -5,6 +5,7 @@ exception handlers (e.g. a middleware itself raising), it still gets logged
 with request context before being re-raised.
 """
 
+from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 import structlog
@@ -16,7 +17,11 @@ log = structlog.get_logger("request")
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         request_id = request.headers.get("X-Request-ID") or str(uuid4())
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(

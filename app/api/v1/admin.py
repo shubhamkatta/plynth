@@ -1,7 +1,7 @@
 """Platform-admin endpoints. Authenticated by `X-Platform-Admin-Token`
 header (env var `PLATFORM_ADMIN_TOKEN`). These sit *above* products."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/products", response_model=list[ProductResponse])
-async def list_products(db: Annotated[AsyncSession, Depends(get_db)]) -> list:
+async def list_products(db: Annotated[AsyncSession, Depends(get_db)]) -> list[Product]:
     with bypass_product(), bypass_tenant():
         return await product_svc.list_products(db)
 
@@ -44,7 +44,7 @@ async def create_product(
     return product
 
 
-def _deep_merge(base: dict, patch: dict) -> dict:
+def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
     """Shallow per top-level key, deep one level down — enough for our
     settings tree (auth.*, features.*). Avoids dropping unrelated keys
     when a caller patches one sub-section."""

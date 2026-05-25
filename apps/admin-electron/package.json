@@ -1,7 +1,7 @@
 {
   "name": "plynth-admin",
   "version": "0.1.0",
-  "description": "Desktop admin UI for the plynth platform — manage products, tenants, users, plans, subscriptions, credits, audit.",
+  "description": "Plynth desktop admin — manage products, tenants, users, plans, subscriptions, credits, audit from one place.",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",

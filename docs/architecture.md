@@ -16,8 +16,7 @@ Companion documents (focused references — cross-linked throughout):
 - `docs/credits.md` — ledger model
 - `docs/deployment.md` — production checklist
 - `docs/deploy-fly.md` — Fly.io + Neon + Upstash runbook (generic)
-- `docs/deploy-plynth.md` — first-deploy runbook on Fly tailored to `api.example.com`
-- `docs/deploy-digitalocean.md` — **active** cheapest-prod runbook ($6 droplet + Caddy + B2 backups) for `api.example.com`
+- `docs/deploy-digitalocean.md` — cheapest-prod runbook ($6 droplet + Caddy + B2 backups) on `api.example.com`
 - `docs/hosting-and-integration.md` — hosting tiers + platform-owner-facing integration patterns
 - `docs/postman_collection.json` — runnable API collection
 

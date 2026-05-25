@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Change a user's password on a deployed platform.
+"""Change a user's password on a deployed Plynth platform.
 
-Run from your laptop (not the droplet). Stdlib only — no pip install.
+Run from your laptop (not the server). Stdlib only — no pip install.
 
 Usage:
     python3 scripts/change_password.py
 
 Defaults are baked for the first-deploy admin lockdown:
-    BASE_URL     = https://api.example.com
+    BASE_URL     = http://localhost:8000
     PRODUCT_SLUG = platform
     EMAIL        = admin@example.com
     CURRENT_PW   = ChangeMeNow123!   (the seeded default)
 
 Override any of them via env vars:
-    EMAIL=alice@gmail.example.com \\
+    EMAIL=alice@example.com \\
     BASE_URL=https://api.example.com \\
     PRODUCT_SLUG=chatbot \\
     CURRENT_PW='whatever' \\
@@ -27,7 +27,7 @@ import ssl
 import sys
 from urllib import error, request
 
-BASE_URL     = os.environ.get("BASE_URL",     "https://api.example.com")
+BASE_URL     = os.environ.get("BASE_URL",     "http://localhost:8000")
 PRODUCT_SLUG = os.environ.get("PRODUCT_SLUG", "platform")
 EMAIL        = os.environ.get("EMAIL",        "admin@example.com")
 CURRENT_PW   = os.environ.get("CURRENT_PW",   "ChangeMeNow123!")

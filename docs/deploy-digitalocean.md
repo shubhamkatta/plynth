@@ -1,16 +1,19 @@
 # Deploy → `api.example.com` on DigitalOcean ($6/mo)
 
+> **Replace `api.example.com` with your own hostname throughout.** The
+> values shown are illustrative.
+
 End-to-end runbook for the **cheapest production-grade deploy** of this
 scaffold: one $6/mo DigitalOcean droplet running the existing
 `docker-compose.yml` + a production overlay, fronted by Caddy for
 auto-TLS, with nightly backups to Backblaze B2.
 
-Same end result as Fly: `https://api.example.com` is live and
-every product hits it. Different infra. Migration to Fly / AWS later is
-a `pg_dump | ssh` + DNS flip (covered in § 14).
+End result: `https://api.example.com` is live and every product hits it.
+Migration to Fly / AWS later is a `pg_dump | ssh` + DNS flip (covered
+in § 14).
 
 > Architecture / contracts: `docs/ARCHITECTURE.md`.
-> Fly-equivalent runbook: `docs/deploy-plynth.md`.
+> Fly-equivalent runbook: `docs/deploy-fly.md`.
 
 Total time the first time: **~90 minutes**. Total cost: **~$8/mo all-in**.
 
@@ -18,8 +21,8 @@ Total time the first time: **~90 minutes**. Total cost: **~$8/mo all-in**.
 
 ## Pre-flight checklist
 
-- [ ] You own `example.com` (you do).
-- [ ] Cloudflare manages DNS for it (from `deploy-plynth.md` § 1) — if not, do that section first.
+- [ ] You own the domain you plan to use (`example.com` placeholder below).
+- [ ] Cloudflare (or another DNS host) manages DNS for it.
 - [ ] An SSH key on your laptop (`ls ~/.ssh/id_ed25519.pub` — if not, run `ssh-keygen -t ed25519`).
 - [ ] About **90 minutes** the first time.
 
@@ -35,11 +38,11 @@ Accounts you'll need (all have free signups):
 
 1. Sign up / log in at [cloud.digitalocean.com](https://cloud.digitalocean.com).
 2. **Create → Droplet** with:
-   - **Region**: `Bangalore (BLR1)` — lowest latency from India.
+   - **Region**: pick the one nearest your users.
    - **Image**: Ubuntu 24.04 (LTS) x64.
    - **Type**: **Basic** → **Premium AMD** → **`$6/mo` (1 GB / 1 vCPU / 25 GB SSD)**.
    - **Authentication**: SSH key — paste `~/.ssh/id_ed25519.pub`.
-   - **Hostname**: `plynth-api`.
+   - **Hostname**: `plynth-api` (or whatever you like).
    - **Backups**: leave OFF (we do our own to B2 — $1.20/mo cheaper).
 3. Click Create. ~60 sec.
 4. Note the **public IPv4** — let's call it `$DROPLET_IP`.
@@ -156,13 +159,13 @@ sudo mkdir -p /opt/platform
 sudo chown deploy:deploy /opt/platform
 cd /opt/platform
 
-# 4.0 — Set up a GitHub deploy key (the repo is private).
+# 4.0 — If the repo is private, set up a GitHub deploy key.
 # Generate a keypair scoped to THIS droplet (don't reuse your laptop key).
 ssh-keygen -t ed25519 -C "deploy@plynth-api" \
     -f ~/.ssh/github_deploy -N ""
 cat ~/.ssh/github_deploy.pub
 # → copy the printed line; in GitHub:
-#   https://github.com/plynth/generic-product-scaffold/settings/keys/new
+#   https://github.com/<your-org>/<your-repo>/settings/keys/new
 #   - Title: "plynth-api droplet"
 #   - Key:   (paste)
 #   - Allow write access: UNCHECKED (read-only — droplet only pulls)
@@ -179,11 +182,11 @@ chmod 600 ~/.ssh/config
 
 # Verify auth before cloning.
 ssh -T git@github.com
-# expect: "Hi plynth/generic-product-scaffold! You've successfully
-#          authenticated, but GitHub does not provide shell access."
+# expect: "Hi <your-org>/<your-repo>! You've successfully authenticated, but
+#          GitHub does not provide shell access."
 
 # Clone via SSH (HTTPS would prompt for a password we don't have).
-git clone git@github.com:plynth/generic-product-scaffold.git .
+git clone git@github.com:<your-org>/<your-repo>.git .
 
 # Generate secrets (do these on the droplet so they never leave it)
 JWT_SECRET=$(openssl rand -hex 32)
@@ -251,11 +254,9 @@ The repo already ships `docker-compose.prod.yml` (production overlay)
 and `Caddyfile.example`. You just need to:
 
 ```bash
-# Use the example Caddyfile (hostname already correct for plynth)
+# Copy and edit the example Caddyfile (replace api.example.com with your hostname)
 cp Caddyfile.example Caddyfile
-
-# If you're on a different hostname, edit it:
-# nano Caddyfile
+nano Caddyfile
 
 # Make sure the dump destination exists (used by docker-compose.prod.yml's
 # Postgres bind-mount):
@@ -281,7 +282,7 @@ In **Cloudflare → DNS → Add record**:
 
 | Type | Name | Value | Proxy | TTL |
 |---|---|---|---|---|
-| `A` | `api` | `$DROPLET_IP` | **🟢 DNS only (grey cloud)** | Auto |
+| `A` | `api` | `$DROPLET_IP` | **DNS only (grey cloud)** | Auto |
 
 > **CRITICAL:** proxy must be **DNS only**, not Proxied. Caddy does TLS itself — the Cloudflare proxy would intercept the ACME HTTP-01 challenge and break cert issuance. Same trade-off as Fly — you lose Cloudflare's DDoS/WAF in front of the API, but the Droplet's firewall + ufw absorb normal attacks.
 
@@ -326,7 +327,7 @@ curl -s https://api.example.com/ready
 # {"status":"ready"}
 ```
 
-🎉 You're live.
+You're live.
 
 ---
 
@@ -403,7 +404,7 @@ sudo touch /var/log/platform-backup.log
 sudo chown deploy:deploy /var/log/platform-backup.log
 
 crontab -e
-# Add this line (3:13 AM IST daily):
+# Add this line (3:13 AM daily):
 13 3 * * * cd /opt/platform && B2_BUCKET=<your-bucket-name> ./scripts/backup.sh >> /var/log/platform-backup.log 2>&1
 ```
 
@@ -487,11 +488,11 @@ docker stats --no-stream
 
 | Item | Monthly |
 |---|---|
-| DigitalOcean Droplet (1 GB ARM, Bangalore) | $6.00 |
+| DigitalOcean Droplet (1 GB, Premium AMD) | $6.00 |
 | Cloudflare DNS + free email forwarding | $0 |
 | Backblaze B2 backups (≤ 10 GB free tier) | ~$0 |
 | UptimeRobot monitoring | $0 |
-| Domain `example.com` (already owned) | $0 |
+| Domain (already owned) | $0 |
 | **Total** | **~$6/mo** |
 
 Plus a one-time $0 for the entire setup if you're patient with Cloudflare's free tier. The next size up ($12 / 2 GB) is one click if you ever want more headroom.
@@ -569,10 +570,10 @@ No code changes. Same Dockerfile, same compose, same secrets. The only differenc
 
 ## Bookmark this URL
 
-`https://api.example.com` — your platform's stable address.
-Same domain whether the backend lives on this droplet, a Fly machine, or
-AWS Fargate. Every product (web, Electron, mobile) hard-codes this
-plus `X-Product-Slug: <theirs>` on every call.
+`https://api.example.com` — your platform's stable address. Same domain
+whether the backend lives on this droplet, a Fly machine, or AWS Fargate.
+Every product (web, Electron, mobile) hard-codes this plus
+`X-Product-Slug: <theirs>` on every call.
 
 The two files that drive this whole setup live in the repo:
 **`docker-compose.prod.yml`** + **`Caddyfile.example`**. Treat them like

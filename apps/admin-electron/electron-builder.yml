@@ -41,5 +41,5 @@ linux:
 # Auto-update — wire when you publish to GitHub Releases / S3.
 # publish:
 #   provider: github
-#   owner: plynth
+#   owner: shubhamkatta
 #   repo: generic-product-scaffold

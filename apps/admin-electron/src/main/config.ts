@@ -15,8 +15,10 @@ interface AppConfig {
   actingTenantSlug: string | null;
 }
 
+// Local dev API by default — change in Settings on first launch if you've
+// deployed elsewhere.
 const DEFAULTS: AppConfig = {
-  baseUrl:          "https://api.example.com",
+  baseUrl:          "http://localhost:8000",
   adminProductSlug: null,
   actingTenantSlug: null,
 };

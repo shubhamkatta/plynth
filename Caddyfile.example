@@ -1,4 +1,5 @@
-# Caddy config for production deploys behind Cloudflare.
+# Caddy config for production deploys behind Cloudflare. Replace
+# `api.example.com` below with your own hostname.
 #
 # Copy to `Caddyfile` (no extension) on the server, edit the hostname,
 # then bring the stack up.

@@ -1,32 +1,89 @@
-# Product Platform — reusable multi-tenant *multi-product* SaaS scaffold
+# Plynth
 
-A drop-in backend layer that hosts **many independent SaaS products** on a
-single deployment. Each product is isolated end-to-end: its own tenants,
-users, plans, subscriptions, credits, and audit log. Same email or company
-can sign up in two products without conflict.
+*A drop-in multi-tenant, multi-product SaaS scaffold.*
 
-> **Start here:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the
-> source of truth — HLD + LLD + every documented contract (data model,
-> routes, RBAC, jobs / storage APIs that the Electron client uses).
-> Every change in this repo updates that doc.
+![CI](https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/github/license/shubhamkatta/plynth.svg) ![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
-The scaffold provides the boring-but-critical 80% every SaaS, on-prem,
-desktop, or mobile app needs:
+## Why Plynth?
 
-- **Multi-product** — bootstrap a new product via one admin call; all scoped APIs key off `X-Product-Slug` (or the JWT `pid` claim)
-- **Identity** — email/password + JWT (access + refresh) with `pid` claim, Argon2id hashing, password reset, MFA-ready
-- **Multi-tenancy** — strict dual `(product_id, tenant_id)` isolation, parent → child tenants with role-gated act-as, B2B + B2C (`Tenant.type`)
-- **RBAC + IAM** — `resource:action` permissions (global catalog), per-product system + custom roles, role bindings scoped to a child tenant
-- **Plans & Subscriptions** — plan catalog per product, trial → active → past-due → grace → suspended → cancelled lifecycle, upgrade/downgrade with proration hook
-- **Billing** — provider-agnostic interface; Stripe driver, mock driver for dev
-- **Credits / metered usage** — append-only ledger per tenant, plan-driven monthly allotments, atomic consumption (`SELECT … FOR UPDATE`)
-- **Lifecycle ops** — invite, activate / deactivate, soft-delete, audit log of every state change (incl. `acting_from_tenant_id` for act-as)
-- **Background jobs** — arq workers for payment reminders, grace-period transitions, credit resets
-- **Observability** — structlog JSON, request IDs, `product_id` + `tenant_id` + `user_id` propagated, `/health` and `/ready`
-- **DX** — Dockerised, `make up`, autoreload, Alembic, seed, ruff + mypy + pytest
+Every founder building a B2B or B2C SaaS rebuilds the same plumbing before they
+write a single line of product code: sign-up and sign-in, password reset,
+OAuth, multi-tenancy with strict isolation, RBAC, plans and subscriptions, a
+billing state machine, metered credits, audit log, background jobs, deploy.
+That is six months of work — most of it boring, all of it security-critical.
 
-It's an **independent layer**: drop your product modules under `app/products/<name>/`
-and consume identity / tenancy / billing / credits via the documented service interfaces.
+Plynth ships that 80% as a reusable backend layer. Identity, tenancy, RBAC,
+billing, credits, audit, jobs, observability — wired together, tested, and
+designed to host **many independent SaaS products on one deployment**. Each
+product gets its own tenants, users, plans, subscriptions, and credits, fully
+isolated end-to-end. The same email or company can sign up in two products
+without conflict.
+
+Most scaffolds assume one product per deployment. Plynth keys every domain
+table on `(product_id, tenant_id)` so you can run an internal tool, a B2C app,
+and a B2B platform on one Postgres + one worker pool with zero cross-bleed. Add
+a new product with one admin call. Fork it, drop your product code under
+`app/products/<name>/`, and ship in a week instead of six months.
+
+## Features
+
+### Multi-product, multi-tenant core
+- **Multi-product** — bootstrap a new product via one admin call; all scoped
+  APIs key off the `X-Product-Slug` header (public) or the JWT `pid` claim
+  (authenticated). Header and claim must agree.
+- **Multi-tenancy** — strict dual `(product_id, tenant_id)` isolation enforced
+  at the repository layer, parent → child tenants with role-gated act-as, B2B
+  and B2C in the same model (`Tenant.type`).
+- **RBAC + IAM** — `resource:action` permissions from a global catalogue,
+  per-product system and custom roles, role bindings scoped to a child tenant.
+
+### Identity
+- Email + password sign-up and sign-in, JWT access + refresh with server-side
+  revocation, Argon2id hashing.
+- Forgot-password and reset (single-use token), password change, `/me`.
+- Google OAuth2 login with per-product auto-provisioning toggle.
+
+### Billing and metering
+- **Plans and subscriptions** — plan catalogue per product; lifecycle is
+  `trial → active → past_due → grace → suspended → cancelled` with an
+  upgrade/downgrade proration hook.
+- **Billing** — provider-agnostic interface; Stripe driver in tree, mock
+  driver for local dev. Idempotency-Key honoured on every mutating endpoint.
+- **Credits / metered usage** — append-only ledger per tenant, plan-driven
+  monthly allotments, atomic consumption via `SELECT … FOR UPDATE` with
+  caller-supplied `reference` for retry-safe dedupe.
+
+### Operations
+- **Lifecycle ops** — invite, activate, deactivate, soft-delete (re-invite of
+  the same email after delete is supported via partial unique indexes), audit
+  log of every state change including `acting_from_tenant_id` for act-as
+  traffic.
+- **Per-product config** — refresh-token TTL, Google auto-provisioning,
+  parent → child act-as, and more are JSONB `settings` on `Product`.
+- **Background jobs** — arq workers for payment reminders, grace-period
+  transitions, and credit resets.
+- **Observability** — structlog JSON on stdout; `request_id`, `product_id`,
+  `tenant_id`, `user_id` propagated through every log. `/health` and `/ready`
+  for orchestrators.
+- **Platform admin token** — true super-user across all routes for ops and
+  support workflows.
+
+### Hardened by default
+- `/docs` and `/openapi.json` hidden in prod.
+- Partial unique indexes so soft-deleted rows free their slug / email.
+- `Tenant.expires_at` hard-cap enforcement.
+- No bare `except Exception`; typed `AppError` hierarchy with central handlers.
+
+### Reference Electron admin
+- Desktop admin app at `apps/admin-electron/` manages every product, tenant,
+  user, plan, subscription, credit wallet, and audit row from one window.
+- `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict
+  CSP, tokens in keytar — never `localStorage`.
+
+### Developer experience
+- Dockerised. `make up`, `make migrate`, `make seed`, `make test`.
+- Autoreload, ruff, mypy, pytest. 170+ tests, runs in ~17s on Postgres.
+- Claude Code skills under `.claude/skills/` for extending the platform.
 
 ## Stack
 
@@ -41,24 +98,28 @@ and consume identity / tenancy / billing / credits via the documented service in
 | Auth | PyJWT + Argon2id (argon2-cffi) | OWASP-recommended |
 | Validation | Pydantic v2 | fastest pure-Python validator |
 | Billing | Stripe (pluggable) | provider interface in `app/providers/billing` |
+| Admin client | Electron 32 + React 18 + Mantine 7 + TanStack Query | drop-in desktop admin |
 | Container | python:3.12-slim multi-stage | ~120 MB runtime image |
 
-## Quick start
+## Quickstart (5 minutes)
 
 ```bash
+git clone https://github.com/shubhamkatta/plynth.git
+cd plynth
 cp .env.example .env
-make up                  # bring up db + redis + api + worker
-make migrate             # apply schema
-make seed                # default product "platform" + plans + admin user
+make up                  # postgres + redis + api + worker
+make migrate             # apply schema (Alembic + scripts/migrate.py)
+make seed                # default product "platform" + standard plans + admin user
 open http://localhost:8000/docs
 ```
 
-Default seeded admin (change immediately): `admin@example.com` / `ChangeMeNow123!`.
-Default product slug: `platform`. Send `X-Product-Slug: platform` on every public
-API call (login, register, plan listing); authenticated calls derive the product
-from the JWT.
+> **Default seeded admin (change immediately):**
+> `admin@example.com` / `ChangeMeNow123!`
+> Default product slug: `platform`. Send `X-Product-Slug: platform` on every
+> public API call (login, register, plan listing); authenticated calls derive
+> the product from the JWT.
 
-### Spinning up a new product
+### Bootstrap a new product
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/admin/products \
@@ -74,14 +135,10 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
        "email": "owner@acme.example.com", "password": "S3cretPassword!"}'
 ```
 
-(The platform-admin endpoint seeds system roles automatically. Create
-plans for the new product via the plans endpoint — see `docs/multi-product.md`.)
+The admin endpoint seeds system roles automatically. Create plans for the new
+product via the plans endpoint — see [`docs/multi-product.md`](docs/multi-product.md).
 
 ### B2C signup (one user, no company)
-
-For products whose customer is an individual, use `POST /api/v1/auth/register-individual`.
-The platform derives a private slug + tenant name; the result is a
-`Tenant` with `type=individual` and a single owner user.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/auth/register-individual \
@@ -91,85 +148,80 @@ curl -X POST http://localhost:8000/api/v1/auth/register-individual \
        "full_name": "Alice Rivers"}'
 ```
 
-Underneath it's the same `register` flow — same trial subscription,
-credits, audit. See `docs/multi-tenancy.md` § "B2B vs B2C".
+Underneath it is the same `register` flow — same trial subscription, credits,
+audit. See [`docs/multi-tenancy.md`](docs/multi-tenancy.md) § "B2B vs B2C".
 
-## Layout
+## The Electron admin (optional)
+
+`apps/admin-electron/` is a reference desktop client built on Electron 32 +
+React 18 + Mantine 7 + TanStack Query. It consumes only the documented REST
+API — no privileged surface — and manages products, tenants, users, plans,
+subscriptions, credits, and audit for every product on the deployment from one
+window. Default API base is `http://localhost:8000`. See
+[`apps/admin-electron/README.md`](apps/admin-electron/README.md).
+
+## Architecture
+
+Layers flow downward: `api → services → repositories → models`. Routers are
+dumb adapters; business logic lives in services; repositories own the
+`(product_id, tenant_id)` dual filter and are the only path to the DB. One
+transaction per HTTP request; webhooks and jobs use `session_scope()`. All
+async — no sync DB calls anywhere in `app/`.
 
 ```
-app/
-  main.py              FastAPI factory, lifespan, middleware
-  core/                config, db, redis, security, deps, tenant + product ctx, logging
-  models/              SQLAlchemy ORM (Product, Tenant, User, Plan, …)
-  schemas/             Pydantic request/response models
-  api/v1/              versioned routers (auth, tenants, users, roles, plans,
-                         subscriptions, credits, webhooks, admin)
-  services/            business logic, transactional boundaries (per product)
-  repositories/        DB access — dual (product_id, tenant_id) filter
-  providers/billing/   billing-provider abstraction (Stripe, Mock)
-  tasks/               arq jobs (reminders, grace, credit resets)
-  middleware/          tenant resolver, request ID, rate limit
-docs/
-  ARCHITECTURE.md      HLD + LLD + Electron API contracts (start here)
-  multi-product.md     product isolation
-  multi-tenancy.md     tenant isolation + act-as + B2C
-  rbac.md              permission model + scope semantics
-  billing.md           subscription state machine
-  credits.md           ledger model
-  deployment.md        production checklist (generic)
-  deploy-fly.md        Fly.io + Neon + Upstash runbook
-  hosting-and-integration.md   hosting tiers + integration patterns
-  postman_collection.json      runnable API collection
-migrations/            alembic
-tests/                 unit + integration (134 tests, ~17s on Postgres)
-.claude/skills/        Claude Code skills for extending the platform
-scripts/seed.py        seed default product + plans + admin
+app/             FastAPI app — core, models, schemas, api/v1, services,
+                 repositories, providers, tasks, middleware
+apps/            client apps (admin-electron reference)
+docs/            ARCHITECTURE.md (source of truth) + focused docs
+tests/           unit + integration (170+ tests)
+scripts/         seed, migrate helpers
+migrations/      Alembic revisions
 ```
 
-## Adding a product module on top
-
-1. Read `docs/ARCHITECTURE.md` first.
-2. Create the product: `POST /api/v1/admin/products` (with platform-admin token).
-3. Optionally create plans for it (with an owner JWT scoped to that product).
-4. Drop your product code under `app/products/<your_product>/{models,schemas,api,services}.py`.
-5. Register routers in `app/main.py` under the existing tenant-aware deps.
-6. If you need metered features, register a credit `feature_key` (see `docs/credits.md`).
-7. Use the Claude skill `/add-feature` for the boilerplate.
-8. **Update `docs/ARCHITECTURE.md`** for any contract you change (see § "Documentation maintenance contract" in that doc).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the source of truth — HLD,
+LLD, data model, route catalogue, RBAC codes, configuration matrix, and the
+Jobs / Storage API contracts the Electron client consumes. Every code change
+that touches a contract updates that doc in the same commit.
 
 ## What's intentionally NOT in the scaffold
 
-- A frontend (this is a backend layer).
-- Email/SMS sending (interfaces stubbed under `app/providers/notifications.py`; plug SES / Postmark / Twilio).
-- Object storage (drop in S3 client where you need it; storage API spec'd in `docs/ARCHITECTURE.md` § 6.3).
-- Cross-product SSO (each product registration is independent).
-- Search / analytics. Keep this layer boring.
+- **A frontend for your actual product.** This is a backend layer. Build
+  whatever frontend you want on top of the documented REST API.
+- **Email / SMS sending.** Interfaces are stubbed under
+  `app/providers/notifications.py`; plug SES, Postmark, Resend, or Twilio.
+- **Object storage.** Drop in an S3 client; the storage API contract is
+  spec'd in `docs/ARCHITECTURE.md` § 6.3.
+- **Cross-product SSO.** Each product registration is independent by design.
+- **Search / analytics.** Keep this layer boring; bolt them on outside.
 
-## Operations
+## Contributing
 
-- `GET /health` — liveness (always 200 if process up)
-- `GET /ready` — readiness (db + redis ping)
-- Logs are JSON on stdout, `request_id` + `product_id` + `tenant_id` + `user_id` propagated.
+Contributions are very welcome — bug fixes, new features, doc improvements,
+deploy recipes, new billing or notification provider drivers. For anything
+non-trivial please open an issue first so we can talk through the design
+before you write code.
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev setup, branch flow, test rules.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — be kind, be technical.
+- [`SECURITY.md`](SECURITY.md) — how to report vulnerabilities privately.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
 
 ## Docs index
 
 | Doc | When to read it |
 | --- | --- |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | **First.** HLD + LLD + every documented contract, including the Electron-facing Jobs / Storage API designs. Source of truth — every code change updates it. |
-| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | **Share this with integrating products.** Self-contained client-side guide; auth flow, headers, endpoint catalogue by UI action, minimal TS + Python client, a `CLAUDE.md` snippet you paste into the consuming product. |
-| [`docs/multi-product.md`](docs/multi-product.md) | Product isolation, header / JWT resolution, admin bootstrap |
-| [`docs/multi-tenancy.md`](docs/multi-tenancy.md) | Tenant isolation, parent → child act-as, B2B vs B2C |
-| [`docs/rbac.md`](docs/rbac.md) | Permission model, scope semantics |
-| [`docs/billing.md`](docs/billing.md) | Subscription state machine, upgrade/downgrade rules, provider interface |
-| [`docs/credits.md`](docs/credits.md) | Ledger model, atomic consumption pattern |
-| [`docs/deployment.md`](docs/deployment.md) | Production checklist (generic) |
-| [`docs/deploy-fly.md`](docs/deploy-fly.md) | Concrete Fly.io + Neon + Upstash runbook (generic) |
-| [`docs/deploy-plynth.md`](docs/deploy-plynth.md) | Fly runbook tailored to `api.example.com` |
-| [`docs/deploy-digitalocean.md`](docs/deploy-digitalocean.md) | **Active** $6/mo DO droplet + Caddy + B2 backups runbook for `api.example.com` |
-| [`docs/hosting-and-integration.md`](docs/hosting-and-integration.md) | Hosting tiers + how other products consume this API |
-| [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman |
-| [`apps/admin-electron/README.md`](apps/admin-electron/README.md) | **Reference Electron client** — desktop admin app for products / tenants / users / plans / subscriptions / credits / audit. Drop-in template for building your own desktop client on top of this platform. |
-
-## License
-
-MIT
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | **First.** HLD + LLD + every documented contract, including the Electron-facing Jobs / Storage APIs. Source of truth. |
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | **Share with integrating products.** Auth flow, headers, endpoint catalogue, minimal TS + Python clients, `CLAUDE.md` snippet for the consuming product. |
+| [`docs/multi-product.md`](docs/multi-product.md) | Product isolation, header / JWT resolution, admin bootstrap. |
+| [`docs/multi-tenancy.md`](docs/multi-tenancy.md) | Tenant isolation, parent → child act-as, B2B vs B2C. |
+| [`docs/rbac.md`](docs/rbac.md) | Permission model, scope semantics. |
+| [`docs/billing.md`](docs/billing.md) | Subscription state machine, upgrade/downgrade rules, provider interface. |
+| [`docs/credits.md`](docs/credits.md) | Ledger model, atomic consumption pattern. |
+| [`docs/deployment.md`](docs/deployment.md) | Production checklist (generic). |
+| [`docs/deploy-digitalocean.md`](docs/deploy-digitalocean.md) | DigitalOcean droplet + Caddy + B2 backups runbook. |
+| [`docs/deploy-fly.md`](docs/deploy-fly.md) | Fly.io + Neon + Upstash runbook. |
+| [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman. |
+| [`apps/admin-electron/README.md`](apps/admin-electron/README.md) | Reference Electron client for the platform. |

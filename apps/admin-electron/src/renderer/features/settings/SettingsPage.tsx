@@ -65,7 +65,7 @@ export function SettingsPage() {
       <Card>
         <Text fw={600} mb="xs">API endpoint</Text>
         <Text size="xs" c="dimmed" mb="sm">
-          Base URL for every request. Defaults to <Text component="span" ff="monospace" size="xs">https://api.example.com</Text>.
+          Base URL for every request. Defaults to <Text component="span" ff="monospace" size="xs">http://localhost:8000</Text> (local dev). Change to your deployed API URL.
         </Text>
         <Group gap="xs" align="end">
           <TextInput

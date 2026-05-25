@@ -605,7 +605,7 @@ concerns matter:
 
 #### 5.5.1 Reference implementation: `apps/admin-electron/`
 
-A working admin client lives in [`apps/admin-electron/`](../apps/admin-electron/README.md).
+A working admin client lives in [`apps/admin-electron/`](https://github.com/shubhamkatta/plynth/tree/main/apps/admin-electron).
 It enforces every recommendation in the table above:
 
 - All HTTP runs in the **main process** (`src/main/api/client.ts`); the

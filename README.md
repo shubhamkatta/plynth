@@ -17,7 +17,7 @@ A reusable, batteries-included backend for SaaS founders — identity, multi-ten
 
 <p align="center">
   <a href="https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/shubhamkatta/plynth/blob/main/docs/assets/coverage.svg"><img alt="Coverage" src="docs/assets/coverage.svg"></a>
+  <a href="https://codecov.io/gh/shubhamkatta/plynth"><img alt="Coverage" src="https://codecov.io/gh/shubhamkatta/plynth/branch/main/graph/badge.svg"></a>
   <a href="https://github.com/shubhamkatta/plynth/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/shubhamkatta/plynth.svg"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue.svg">
   <a href="https://github.com/shubhamkatta/plynth/blob/main/CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>

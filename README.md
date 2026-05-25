@@ -1,8 +1,22 @@
-# Plynth
+<h1 align="center">🐢 Plynth</h1>
 
-*A drop-in multi-tenant, multi-product SaaS scaffold.*
+<p align="center"><strong>Stop rebuilding the same SaaS plumbing.</strong></p>
 
-![CI](https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/github/license/shubhamkatta/plynth.svg) ![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+<p align="center">
+A reusable, batteries-included backend for SaaS founders — identity, multi-tenancy, RBAC, plans, subscriptions, billing, credits, audit, jobs — packaged so <strong>one deployment hosts many independent products</strong>. Fork it, drop your product code in, ship in a week instead of six months.
+</p>
+
+<p align="center"><em>Turtles all the way down — every product on the same dependable shell.</em></p>
+
+<p align="center">
+  <a href="https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/shubhamkatta/plynth/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/shubhamkatta/plynth/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/shubhamkatta/plynth.svg"></a>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue.svg">
+  <a href="https://github.com/shubhamkatta/plynth/blob/main/CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
+  <a href="https://github.com/shubhamkatta/plynth/releases"><img alt="Release" src="https://img.shields.io/github/v/release/shubhamkatta/plynth?include_prereleases&sort=semver"></a>
+</p>
+
+---
 
 ## Why Plynth?
 

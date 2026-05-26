@@ -22,6 +22,7 @@ A reusable, batteries-included backend for SaaS founders — identity, multi-ten
   <img alt="Python" src="https://img.shields.io/badge/python-3.12%2B-blue.svg">
   <a href="https://github.com/shubhamkatta/plynth/blob/main/CONTRIBUTING.md"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
   <a href="https://github.com/shubhamkatta/plynth/releases"><img alt="Release" src="https://img.shields.io/github/v/release/shubhamkatta/plynth?include_prereleases&sort=semver"></a>
+  <a href="https://shubhamkatta.github.io/plynth/"><img alt="Docs" src="https://img.shields.io/badge/docs-shubhamkatta.github.io%2Fplynth-blue"></a>
 </p>
 
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
@@ -332,3 +333,15 @@ MIT — see [`LICENSE`](LICENSE).
 | [`docs/deploy-fly.md`](docs/deploy-fly.md) | Fly.io + Neon + Upstash runbook. |
 | [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman. |
 | [`apps/admin-electron/README.md`](apps/admin-electron/README.md) | Reference Electron client for the platform. |
+
+---
+
+## Star history
+
+<a href="https://star-history.com/#shubhamkatta/plynth&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=shubhamkatta/plynth&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=shubhamkatta/plynth&type=Date" />
+    <img alt="Star history chart for shubhamkatta/plynth" src="https://api.star-history.com/svg?repos=shubhamkatta/plynth&type=Date" />
+  </picture>
+</a>

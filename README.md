@@ -268,6 +268,39 @@ subscriptions, credits, and audit for every product on the deployment from one
 window. Default API base is `http://localhost:8000`. See
 [`apps/admin-electron/README.md`](apps/admin-electron/README.md).
 
+## Client SDKs
+
+Two first-party SDKs live in `sdks/` for products that integrate against the
+platform. Both implement the same auth flow, `Idempotency-Key` semantics,
+refresh-on-401, and `{code, message, details}` error envelope as the manual
+contract in [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+
+| SDK | Package | Path | Runtime deps |
+| --- | --- | --- | --- |
+| TypeScript / JS | `@plynth/sdk` | [`sdks/typescript/`](sdks/typescript/) | none (native `fetch`) — Node 20+, browsers, Edge, Workers |
+| Python | `plynth-sdk` | [`sdks/python/`](sdks/python/) | `httpx` only — sync + async clients |
+
+```ts
+import { PlynthClient } from "@plynth/sdk";
+const c = new PlynthClient({ baseUrl: "...", productSlug: "chatbot" });
+await c.auth.login({ email, password });
+const me = await c.auth.me();
+```
+
+```python
+from plynth_sdk import PlynthClient
+with PlynthClient(base_url="...", product_slug="chatbot") as c:
+    c.auth.login({"email": email, "password": password})
+    me = c.auth.me()
+```
+
+Token storage is pluggable (`MemoryStore` by default; opt-in `LocalStorageStore`
+/ `FileStore`; bring your own). See
+[`sdks/typescript/README.md`](sdks/typescript/README.md) and
+[`sdks/python/README.md`](sdks/python/README.md) for resource maps and auth
+modes. A Next.js example wiring the TS SDK to HttpOnly cookies lives at
+[`examples/nextjs-starter/`](examples/nextjs-starter/).
+
 ## Architecture
 
 Layers flow downward: `api → services → repositories → models`. Routers are
@@ -333,6 +366,9 @@ MIT — see [`LICENSE`](LICENSE).
 | [`docs/deploy-fly.md`](docs/deploy-fly.md) | Fly.io + Neon + Upstash runbook. |
 | [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman. |
 | [`apps/admin-electron/README.md`](apps/admin-electron/README.md) | Reference Electron client for the platform. |
+| [`sdks/typescript/README.md`](sdks/typescript/README.md) | `@plynth/sdk` — official TypeScript SDK (Node 20+, browsers, Edge). |
+| [`sdks/python/README.md`](sdks/python/README.md) | `plynth-sdk` — official Python SDK (sync + async). |
+| [`examples/nextjs-starter/README.md`](examples/nextjs-starter/README.md) | Next.js 14 starter showing `@plynth/sdk` with HttpOnly cookie sessions. |
 
 ---
 

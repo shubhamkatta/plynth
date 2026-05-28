@@ -15,8 +15,6 @@ export type AuthFormState = {
   error: string | null;
 };
 
-const INITIAL: AuthFormState = { error: null };
-
 export async function loginAction(
   _prev: AuthFormState,
   formData: FormData,
@@ -72,8 +70,6 @@ export async function signOutAction(): Promise<void> {
   await auth.logout();
   redirect("/login");
 }
-
-export { INITIAL as INITIAL_AUTH_STATE };
 
 function friendlyError(err: unknown): string {
   if (err instanceof PlynthApiError) {

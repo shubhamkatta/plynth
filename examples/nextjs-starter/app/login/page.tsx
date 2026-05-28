@@ -9,7 +9,9 @@
 
 import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
-import { loginAction, INITIAL_AUTH_STATE } from "./actions";
+import { loginAction, type AuthFormState } from "./actions";
+
+const INITIAL_AUTH_STATE: AuthFormState = { error: null };
 
 export default function LoginPage() {
   const [state, formAction] = useFormState(loginAction, INITIAL_AUTH_STATE);

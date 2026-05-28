@@ -16,6 +16,10 @@ into your own product.
   with both tokens rotated.
 - **Logout** that revokes the refresh token server-side and clears
   cookies.
+- **`@plynth/sdk` integration** — `lib/plynth.ts` is a thin shim that
+  wires the SDK up with a cookie-backed `TokenStore`. Every endpoint
+  beyond what the starter wires (credits, tenants, users, plans, …)
+  is one `client().<resource>.<method>()` call away.
 
 ## Prerequisites
 

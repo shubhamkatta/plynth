@@ -12,8 +12,10 @@ import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 import {
   registerIndividualAction,
-  INITIAL_AUTH_STATE,
+  type AuthFormState,
 } from "../login/actions";
+
+const INITIAL_AUTH_STATE: AuthFormState = { error: null };
 
 export default function SignupPage() {
   const [state, formAction] = useFormState(

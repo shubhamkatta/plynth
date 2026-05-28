@@ -7,43 +7,37 @@ API (`/api/v1/*`); no privileged surface.
 
 ## Install
 
-The CLI lives alongside the main Plynth Python package. A normal editable
-install of the platform pulls `httpx` (already a production dep) into
-your environment; you also need `click`:
+Install the platform with the `cli` extras — this pulls in `click`,
+`rich`, and the local `plynth-sdk` package the CLI wraps:
 
 ```bash
-pip install -e .
-pip install "click>=8.0"  # not in core deps yet
-pip install rich          # optional — pretty tables; degrades gracefully
+pip install -e ".[cli]"
 ```
 
-> When a maintainer is ready to make the CLI a first-class entrypoint,
-> add the following to `pyproject.toml` (omitted from this PR to avoid
-> conflicts with concurrent agents):
->
-> ```toml
-> dependencies = [
->   # …existing…
->   "click>=8.0",
->   "rich>=13.0",   # optional but recommended
-> ]
->
-> [project.scripts]
-> plynth = "plynth_cli.cli:main"
-> ```
-
-Invoke via the module entrypoint:
+That registers a `plynth` console script:
 
 ```bash
-python -m plynth_cli --help
-```
-
-You can also alias it for convenience:
-
-```bash
-alias plynth='python -m plynth_cli'
 plynth --help
 ```
+
+(Equivalent: `python -m plynth_cli --help`.)
+
+## Architecture
+
+The CLI is a thin wrapper around [`plynth-sdk`](../sdks/python/). All
+HTTP plumbing — header building, refresh-once-on-401, idempotency keys,
+error envelope parsing — lives in the SDK. The CLI adds:
+
+- **Session storage** to `~/.config/plynth/config.json` (mode 0600)
+  via a `TokenStore` adapter, alongside non-token state like the
+  platform-admin token, default product slug, and acting-tenant slug.
+- **Click subcommands** that map onto SDK resource methods.
+- **Rich-formatted output** (with a plain fallback when rich isn't
+  installed).
+
+If you're building an integration in Python rather than a terminal
+operator, use [`plynth-sdk`](../sdks/python/) directly — don't depend
+on `plynth_cli`.
 
 ## Quick examples
 

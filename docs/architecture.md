@@ -641,6 +641,54 @@ the same way: extend the IPC channel list → add the main handler →
 surface in `BridgeApi` → add the renderer feature folder. See
 `apps/admin-electron/README.md` for the contribution checklist.
 
+### 5.6 Official SDKs
+
+For products integrating against this platform, two first-party SDKs
+live in `sdks/` and are the recommended way to call the API. Both are
+thin, hand-written clients that follow the contracts in `INTEGRATION.md`
+exactly — they are not generated from `docs/openapi.json` (kept small
+and reviewable).
+
+| SDK | Path | Package | Runtime deps | Sync / Async |
+| --- | --- | --- | --- | --- |
+| TypeScript / JS | [`sdks/typescript/`](../sdks/typescript/) | `@plynth/sdk` | zero (native `fetch`) | sync only — `Promise`-based; isomorphic Node 20+/browser/Edge |
+| Python | [`sdks/python/`](../sdks/python/) | `plynth-sdk` | `httpx` only | both — `PlynthClient` + `AsyncPlynthClient` |
+
+Both SDKs implement the same semantics:
+
+- **Auth resolution order** identical to the manual flow above:
+  per-call override → user JWT (from `TokenStore.get()`) → platform-admin
+  token + product slug ("god-mode"). Admin-path requests
+  (`/api/v1/admin/*`) auto-route through `X-Platform-Admin-Token`.
+- **Pluggable token storage** via a `TokenStore` interface — ship
+  `MemoryStore` (default), `LocalStorageStore` (browser, opt-in) /
+  `FileStore` (Python, mode 0600). Bring your own (keytar, Vault,
+  cookies) by implementing the interface.
+- **Refresh-once-on-401** — on a 401 to a user-JWT call, the SDK calls
+  `/auth/refresh` once, updates the store, and retries the original
+  request. Subsequent 401s surface as `PlynthApiError(status=401)`.
+- **Idempotency keys** — mutating resource methods (`*.create`,
+  `*.update`, `*.consume`, `*.purchase`, …) auto-generate a UUID
+  `Idempotency-Key` header. Pass `reference: <uuid>` in the body for
+  application-level dedupe (e.g. credits, jobs).
+- **Error envelope** — non-2xx responses raise `PlynthApiError` carrying
+  `.status`, `.code`, `.message`, `.details`. Transport failures raise
+  `PlynthNetworkError`.
+
+Consumers in this repo already use the SDKs:
+
+- [`plynth_cli/`](../plynth_cli/) — Python CLI; `plynth_cli/client.py`
+  is a back-compat shim over `plynth_sdk.PlynthClient` with a
+  `_CliTokenStore` adapter that round-trips through the existing
+  `~/.config/plynth/config.json` layout.
+- [`examples/nextjs-starter/`](../examples/nextjs-starter/) —
+  `lib/plynth.ts` is a shim over `@plynth/sdk` with a `CookieTokenStore`
+  that proxies to HttpOnly cookies via `lib/session.ts`.
+
+The hand-written reference TS + Python snippets in `docs/INTEGRATION.md`
+§ 9 still exist and remain authoritative for callers who don't want to
+take the SDK as a dependency — they implement the exact same contract.
+
 ---
 
 ## 6. APIs called by the Electron UI
@@ -971,7 +1019,8 @@ Exceeding any returns 413 with `details.feature_key`.
 | New / changed configuration key | § 4.8 (configuration matrix) | `.env.example` |
 | New / changed external integration (Stripe, Email) | § 2 (stack) + § 3.4 (flows) | — |
 | New / changed background job | § 4.6 (jobs today) | — |
-| Any change visible to integrating products (new endpoint, changed shape, new header, new error code) | § 6.1 / 6.2 / 6.3 here | `docs/INTEGRATION.md` (mirror to keep client-facing doc honest) |
+| Any change visible to integrating products (new endpoint, changed shape, new header, new error code) | § 6.1 / 6.2 / 6.3 here | `docs/INTEGRATION.md` (mirror to keep client-facing doc honest) **and** `sdks/typescript/` + `sdks/python/` (add the resource method on both, with tests) |
+| SDK behavior change (auth resolution, header semantics, refresh / idempotency / error envelope) | § 5.6 (Official SDKs) | both `sdks/*/README.md` |
 | Jobs API change | § 6.2 | implementer must keep contract truthful |
 | Storage API change | § 6.3 | implementer must keep contract truthful |
 | Multi-product behavior | § 3.2, § 4.3 | `docs/multi-product.md` |

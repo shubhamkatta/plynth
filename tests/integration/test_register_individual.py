@@ -67,7 +67,10 @@ async def test_individual_register_falls_back_to_email_local_part(
 
 
 @pytest.mark.asyncio
-async def test_individual_register_issues_trial_subscription(client: AsyncClient) -> None:
+async def test_individual_register_activates_free_subscription(client: AsyncClient) -> None:
+    """B2C signup auto-enrols in the cheapest public plan. For the seeded
+    Free plan ($0) the subscription starts ACTIVE with no trial — Free
+    never expires. Paid plans would land in TRIAL with trial_end set."""
     r = await client.post(
         "/api/v1/auth/register-individual",
         json={"email": "trial@gmail.example.com", "password": "S3cretPassword!"},
@@ -77,8 +80,9 @@ async def test_individual_register_issues_trial_subscription(client: AsyncClient
     sub = await client.get("/api/v1/subscription", headers=auth(tok))
     assert sub.status_code == 200
     body = sub.json()
-    assert body["status"] == "trial"
+    assert body["status"] == "active"
     assert body["has_access"] is True
+    assert body["trial_end"] is None
 
 
 @pytest.mark.asyncio

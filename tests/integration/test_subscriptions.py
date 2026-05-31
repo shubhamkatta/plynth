@@ -7,14 +7,17 @@ from tests.conftest import auth, register_tenant
 
 
 @pytest.mark.asyncio
-async def test_register_creates_trial_subscription(client: AsyncClient) -> None:
+async def test_register_activates_free_subscription(client: AsyncClient) -> None:
+    """The seeded Free plan ($0) is the cheapest public plan, so registration
+    activates it immediately — no trial, never expires. See start_trial()
+    in app/services/subscription.py for the $0-vs-paid branching."""
     tok = await register_tenant(client, slug="acme")
     r = await client.get("/api/v1/subscription", headers=auth(tok["access_token"]))
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] == "trial"
+    assert body["status"] == "active"
     assert body["has_access"] is True
-    assert body["trial_end"] is not None
+    assert body["trial_end"] is None
 
 
 @pytest.mark.asyncio

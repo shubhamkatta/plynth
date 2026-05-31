@@ -28,7 +28,9 @@ async def test_register_emits_audit_chain(client: AsyncClient) -> None:
     actions = await _actions_for_tenant(tid)
     assert "tenant.create" in actions
     assert "user.register" in actions
-    assert "subscription.trial_started" in actions
+    # Default seeded plan is Free ($0) — start_trial activates it immediately
+    # (no trial period). Paid-plan signups would emit subscription.trial_started.
+    assert "subscription.activated_free" in actions
 
 
 @pytest.mark.asyncio

@@ -36,7 +36,10 @@ class PlanCreate(BaseModel):
 class PlanUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    price_cents: int | None = None
+    price_cents: int | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    interval: BillingInterval | None = None
+    trial_days: int | None = Field(default=None, ge=0)
     is_public: bool | None = None
     is_active: bool | None = None
     provider_refs: dict[str, Any] | None = None

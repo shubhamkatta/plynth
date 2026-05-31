@@ -45,15 +45,30 @@ async def start_trial(
             plan = min(plans, key=lambda p: p.price_cents)
 
         now = datetime.now(UTC)
-        trial_days = plan.trial_days or settings.default_trial_days
+        # Free plans (price_cents=0) skip the trial entirely → status ACTIVE,
+        # trial_end NULL, current_period_end far in the future. Without this
+        # branch a $0 plan with trial_days=0 would fall through `or
+        # settings.default_trial_days` and silently get a 14-day trial that
+        # later flows into GRACE / SUSPENDED — surfacing as "Free plan expired
+        # after two weeks".
+        if plan.price_cents == 0:
+            status = SubscriptionStatus.ACTIVE
+            trial_days = 0
+            trial_end: datetime | None = None
+            current_period_end = now + timedelta(days=365 * 100)
+        else:
+            status = SubscriptionStatus.TRIAL
+            trial_days = plan.trial_days if plan.trial_days else settings.default_trial_days
+            trial_end = now + timedelta(days=trial_days)
+            current_period_end = now + timedelta(days=30)
         sub = Subscription(
             product_id=product_id,
             tenant_id=tenant_id,
             plan_id=plan.id,
-            status=SubscriptionStatus.TRIAL,
+            status=status,
             current_period_start=now,
-            current_period_end=now + timedelta(days=30),
-            trial_end=now + timedelta(days=trial_days),
+            current_period_end=current_period_end,
+            trial_end=trial_end,
             provider="mock",
         )
         db.add(sub)
@@ -63,10 +78,14 @@ async def start_trial(
             reference=f"trial:{sub.id}",
         )
         await audit.record(
-            db, action="subscription.trial_started",
+            db, action=(
+                "subscription.activated_free"
+                if plan.price_cents == 0
+                else "subscription.trial_started"
+            ),
             resource_type="subscription", resource_id=sub.id,
             tenant_id=tenant_id, product_id=product_id,
-            diff={"plan": plan.code, "trial_days": trial_days},
+            diff={"plan": plan.code, "trial_days": trial_days, "status": status.value},
         )
     return sub
 

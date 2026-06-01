@@ -70,7 +70,7 @@ jobs:
           pip install mkdocs-material pymdown-extensions
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Build site (strict)
         run: mkdocs build --strict --site-dir _site

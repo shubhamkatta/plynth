@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.plan import BillingInterval
 from app.schemas.common import TimestampedResponse
@@ -34,6 +34,11 @@ class PlanCreate(BaseModel):
 
 
 class PlanUpdate(BaseModel):
+    # Reject unknown fields with 422 instead of silently dropping them.
+    # Previously a PATCH like {"trial_days": 30} returned 200 OK but did
+    # nothing because trial_days wasn't on the allow-list — confusing.
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     description: str | None = None
     price_cents: int | None = Field(default=None, ge=0)

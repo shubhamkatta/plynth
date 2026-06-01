@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.tenant import TenantStatus, TenantType
 from app.schemas.common import TimestampedResponse
@@ -32,7 +32,16 @@ class TenantCreate(BaseModel):
 
 
 class TenantUpdate(BaseModel):
+    # Reject unknown fields with 422 — silent drops mislead admins.
+    model_config = ConfigDict(extra="forbid")
+
     name:       str | None = Field(default=None, min_length=1, max_length=255)
+    # Slug renames are supported. The partial unique index on
+    # (product_id, slug) WHERE deleted_at IS NULL prevents collisions
+    # with live tenants — attempted reuse returns 409. URLs / external
+    # bookmarks that hardcode the old slug WILL break; UUIDs (parent_id,
+    # JWT tid claim) keep working since they don't reference slug.
+    slug:       str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[a-z0-9-]+$")
     settings:   dict[str, Any] | None = None
     # Admin override for the hard expiry cap. Pass null to clear, an ISO
     # datetime to extend / shorten. Enforced in app.core.dependencies.

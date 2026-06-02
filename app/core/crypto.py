@@ -132,7 +132,7 @@ def aad_for(*, product_id: str, key: str) -> bytes:
     Binds each ciphertext to its (product, key) row so an attacker with
     DB write access can't substitute ciphertexts between rows.
     """
-    return f"{product_id}|{key}".encode("utf-8")
+    return f"{product_id}|{key}".encode()
 
 
 def mask_preview(plaintext: str) -> str:

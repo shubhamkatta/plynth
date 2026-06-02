@@ -721,6 +721,11 @@ Grouped by typical Electron use case. Full bodies + headers in
 | Read credit balance | `GET /api/v1/credits/wallets` | Show in tray / status bar |
 | Consume credits for a user action | `POST /api/v1/credits/consume` | Pass `reference` for retry-safety |
 | List available plans (pricing page) | `GET /api/v1/plans` | Public; needs `X-Product-Slug` only |
+| Set / rotate an env var (admin) | `PUT /api/v1/admin/products/{slug}/env/{KEY}` | See § 6.4 |
+| List env vars (masked) (admin) | `GET /api/v1/admin/products/{slug}/env` | Previews only; never plaintext |
+| Reveal one env var (admin) | `GET /api/v1/admin/products/{slug}/env/{KEY}?reveal=true&reason=...` | High-severity audit row |
+| Issue a service token (admin) | `POST /api/v1/admin/products/{slug}/service-tokens` | Returns `pst_…` once |
+| Fetch all env vars (product backend) | `GET /api/v1/env`  with `X-Service-Token: pst_…` | Plaintext; never expose token to clients |
 
 ### 6.2 Jobs API (designed — not implemented)
 
@@ -964,6 +969,138 @@ Configurable per product via `Plan.features`:
 
 Exceeding any returns 413 with `details.feature_key`.
 
+### 6.4 Env-vars vault + service tokens (implemented)
+
+> Source-of-truth contract for the per-product secrets vault. Implemented
+> in `app/{core/crypto,models/env_var,models/service_token,services/env_var,services/service_token,api/v1/env_admin,api/v1/env}.py`.
+> Schema migration: `scripts/migrate.py` step `0008_env_vars_and_service_tokens`.
+
+#### Purpose
+
+Each product (e.g. `mayva`, `chatbot`) stores its mandatory runtime
+config in the platform instead of bundling it inside the product's
+package. A product's backend boots, fetches its env vars via API,
+hydrates `process.env` (or equivalent), and keeps running. Rotation is
+a single API call — no redeploy of the product.
+
+The platform itself consumes this vault for `GOOGLE_CLIENT_ID` /
+`GOOGLE_CLIENT_SECRET` at `/auth/google` time (falls back to platform
+`.env` for back-compat).
+
+#### Data model
+
+Two tables, both product-scoped:
+
+```
+product_env_vars
+  (id, product_id, key, value_encrypted BYTEA, is_secret BOOLEAN,
+   description, last_rotated_at, created_at, updated_at)
+  UNIQUE (product_id, key)
+  key pattern: ^[A-Z][A-Z0-9_]{0,127}$   (conventional ENV_NAME)
+
+product_service_tokens
+  (id, product_id, name, token_hash VARCHAR(64), scopes JSONB,
+   expires_at, revoked_at, last_used_at, last_used_ip,
+   created_at, updated_at)
+  UNIQUE (token_hash)
+```
+
+#### Encryption at rest
+
+- **Cipher**: AES-256-GCM (`cryptography.hazmat.primitives.ciphers.aead.AESGCM`)
+- **Master key**: `ENV_ENCRYPTION_KEY` — 32 bytes, url-safe-b64, no padding. Stored in `/etc/.env`-style secret manager, **never in git**. Generate with
+  `python -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).rstrip(b'=').decode())"`.
+- **Per-row nonce**: 12 bytes from `os.urandom`. Stored as the first 12 bytes of `value_encrypted`.
+- **AAD = `<product_uuid>|<key>`** — binds each ciphertext to its row. An attacker with DB write access cannot move a ciphertext between rows; decryption fails authentication.
+- **`is_secret=false`** rows skip encryption entirely; the column stores the utf-8 plaintext as bytes. Use for public-safe config (display URLs, feature flags) that benefits from centralised management.
+- **Key rotation**: pluggable `KeyProvider` interface in `app/core/crypto.py`. To swap in AWS KMS / Vault, implement `key()` and call `set_key_provider(new)`. No call-site changes.
+
+#### Service token format
+
+```
+pst_<32-hex>     ← 44 chars total, shell-safe, no padding
+```
+
+- Generated with `secrets.token_hex(16)` (128 bits entropy).
+- Stored as **SHA-256 hex of the bearer** — DB leak cannot recover plaintext.
+- Plaintext returned ONCE in the `POST /service-tokens` response and forgotten by the platform.
+- Scopes (JSONB array of strings) are validated against `ALLOWED_SCOPES` in `app/schemas/service_token.py`. v1 ships `env:read` only.
+
+#### Endpoints
+
+| Action | Endpoint | Auth | Body / Response |
+| --- | --- | --- | --- |
+| Set or rotate one var | `PUT /api/v1/admin/products/{slug}/env/{KEY}` | platform admin | `{ value, is_secret, description }` → `EnvVarListItem` |
+| Patch metadata only | `PATCH /api/v1/admin/products/{slug}/env/{KEY}` | platform admin | `{ is_secret?, description? }` — does NOT rotate `last_rotated_at` |
+| List (masked) | `GET /api/v1/admin/products/{slug}/env` | platform admin | List items: secrets show `preview` (`sk_l…cdef`); non-secrets show full `value` |
+| Reveal one (audited) | `GET /api/v1/admin/products/{slug}/env/{KEY}?reveal=true&reason=...` | platform admin | Returns plaintext; writes `env.var_revealed` audit row |
+| Delete | `DELETE /api/v1/admin/products/{slug}/env/{KEY}` | platform admin | 204 |
+| Issue service token | `POST /api/v1/admin/products/{slug}/service-tokens` | platform admin | `{ name, scopes, expires_at? }` → `ServiceTokenIssued` (with `token`) |
+| List service tokens | `GET /api/v1/admin/products/{slug}/service-tokens` | platform admin | Metadata only — never the secret |
+| Revoke service token | `DELETE /api/v1/admin/products/{slug}/service-tokens/{id}` | platform admin | 204 |
+| Fetch env (product runtime) | `GET /api/v1/env`  with `X-Service-Token: pst_…` | service token + `env:read` scope | `{ KEY: plaintext, ... }` |
+
+#### Authentication paths
+
+- Admin endpoints: `require_platform_admin` dep — reuses the platform admin token from `PLATFORM_ADMIN_TOKEN`.
+- Product runtime: `require_service_token("env:read")` dep — implements:
+  1. Hash the bearer.
+  2. Look up by `token_hash`. Miss / revoked / expired → 401 `unauthorized`.
+  3. Required scope absent from `scopes` → 403 `forbidden`.
+  4. If `X-Product-Slug` is present, it MUST match the token's product (defence in depth) — mismatch → 403.
+  5. Stamp `last_used_at` / `last_used_ip`.
+
+#### Audit log
+
+| Action | Severity | When |
+| --- | --- | --- |
+| `env.var_created` / `env.var_rotated` | info | `set_var` (PUT) |
+| `env.var_deleted` | info | DELETE |
+| `env.var_revealed` | warning-equiv (operator reason in diff) | `?reveal=true` GET |
+| `service_token.issued` | info | POST /service-tokens |
+| `service_token.revoked` | info | DELETE /service-tokens/{id} |
+
+The plaintext **never** appears in `audit_log.diff`. Reveal diffs include `reason` and the operator (`actor_user_id`); plaintext stays in the response only.
+
+#### Security posture summary
+
+| Concern | Mitigation |
+| --- | --- |
+| DB leak | All values encrypted (AES-GCM) with per-row AAD. Token plaintext non-recoverable (SHA-256). |
+| Master key leak (env compromise) | Re-encrypt sweep using new key, reissue all service tokens. KMS adoption is the architectural upgrade path. |
+| Token leak in logs | `pst_` prefix is greppable. Service tokens never logged by the framework; downstream apps responsible for their own redaction. |
+| Cross-product theft | Service token → product mapping is server-side. `X-Product-Slug` mismatch → 403. `aad_for(product_id, key)` rejects ciphertext substitution. |
+| Admin abuse (curious operator) | Reveal requires explicit `reason`, writes high-severity audit. List responses redact to first/last 4 chars only. |
+
+#### Operator playbook
+
+```bash
+# 1. One-time on a new droplet: generate + persist the master key.
+NEW_KEY=$(python -c "import os, base64; print(base64.urlsafe_b64encode(os.urandom(32)).rstrip(b'=').decode())")
+echo "ENV_ENCRYPTION_KEY=$NEW_KEY" >> /opt/platform/.env
+docker compose ... up -d --force-recreate api worker
+
+# 2. Apply migration 0008 (idempotent).
+docker compose ... exec api python -m scripts.migrate
+
+# 3. Put a credential into the vault.
+curl -X PUT https://api.example.com/api/v1/admin/products/mayva/env/STRIPE_LIVE_KEY \
+  -H "X-Platform-Admin-Token: $PLATFORM_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"value":"sk_live_...","is_secret":true,"description":"Stripe live key"}'
+
+# 4. Issue a service token for the product's backend.
+curl -X POST https://api.example.com/api/v1/admin/products/mayva/service-tokens \
+  -H "X-Platform-Admin-Token: $PLATFORM_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"mayva-prod-backend","scopes":["env:read"]}'
+# response includes token: "pst_…" — store in the product's secret manager (ops scope).
+
+# 5. Product's backend boots:
+curl https://api.example.com/api/v1/env -H "X-Service-Token: pst_…"
+# → {"STRIPE_LIVE_KEY":"sk_live_...","GOOGLE_CLIENT_ID":"...",...}
+```
+
 ---
 
 ## 7. Cross-cutting concerns
@@ -1021,6 +1158,7 @@ Exceeding any returns 413 with `details.feature_key`.
 | New / changed background job | § 4.6 (jobs today) | — |
 | Any change visible to integrating products (new endpoint, changed shape, new header, new error code) | § 6.1 / 6.2 / 6.3 here | `docs/INTEGRATION.md` (mirror to keep client-facing doc honest) **and** `sdks/typescript/` + `sdks/python/` (add the resource method on both, with tests) |
 | SDK behavior change (auth resolution, header semantics, refresh / idempotency / error envelope) | § 5.6 (Official SDKs) | both `sdks/*/README.md` |
+| Env-vars vault — new endpoint, new audit action, new scope, key-provider change | § 6.4 + § 6.1 endpoint table | `docs/INTEGRATION.md` § 9.3, both `sdks/*/README.md` |
 | Jobs API change | § 6.2 | implementer must keep contract truthful |
 | Storage API change | § 6.3 | implementer must keep contract truthful |
 | Multi-product behavior | § 3.2, § 4.3 | `docs/multi-product.md` |

@@ -504,6 +504,84 @@ p.call("POST", "/api/v1/credits/consume",
        json_body={"feature_key":"credits.ai_completion","amount":"1","reference":str(uuid.uuid4())})
 ```
 
+### 9.3 Fetching env vars at startup (per-product secrets vault)
+
+If your product backend needs runtime config — Stripe keys, OpenAI
+keys, the Google OAuth pair for *your* OAuth client, third-party
+webhooks signing secrets, etc. — store them in the **platform's
+per-product env vault** instead of bundling secrets in your release
+artifact. This lets the platform owner rotate values without you
+re-shipping.
+
+**Setup (one-time, platform owner side):**
+1. They `PUT /admin/products/<your-slug>/env/{KEY}` your values
+   (admin-token authenticated; you never see this token).
+2. They `POST /admin/products/<your-slug>/service-tokens
+   {name, scopes: ["env:read"]}` and hand you back a single
+   `pst_…` string. Treat it like a database password.
+
+**Runtime fetch (your backend, on boot):**
+
+```http
+GET /api/v1/env
+X-Service-Token: pst_<your-secret>
+→ 200 { "STRIPE_LIVE_KEY": "...", "GOOGLE_CLIENT_ID": "...", ... }
+```
+
+Typical bootstrap shape:
+
+```python
+# Python — fetch once on import, hydrate process env.
+import os, httpx
+r = httpx.get("https://api.example.com/api/v1/env",
+              headers={"X-Service-Token": os.environ["PLYNTH_SVC_TOKEN"]})
+r.raise_for_status()
+for k, v in r.json().items():
+    os.environ.setdefault(k, v)
+```
+
+```ts
+// TypeScript — same pattern, before app.listen().
+const r = await fetch("https://api.example.com/api/v1/env", {
+  headers: { "X-Service-Token": process.env.PLYNTH_SVC_TOKEN! },
+});
+if (!r.ok) throw new Error(`plynth env fetch failed: ${r.status}`);
+const env = await r.json();
+for (const [k, v] of Object.entries(env)) {
+  process.env[k] ??= v as string;
+}
+```
+
+**Rules**:
+- The service token IS a secret. Put it in your OS secret manager
+  (Vault, AWS Secrets Manager, GCP Secret Manager, `pass`, `.env`
+  with mode 0600). **Never ship to a client (browser, mobile,
+  Electron renderer).** Service tokens decrypt your secrets in
+  plaintext — by definition they can't sit on a user's device.
+- Fetch **once** at boot, cache in memory. Don't refetch on every
+  request (latency + unnecessary load on the platform).
+- On platform 401 (token revoked / expired), surface the error
+  loudly — the platform owner has revoked you; don't auto-retry.
+- For ops convenience, set the token in your process env as
+  `PLYNTH_SVC_TOKEN` (or `<PRODUCT>_PLYNTH_SVC_TOKEN` if your
+  process serves multiple products).
+- Rotation is platform-side: the owner rotates the underlying
+  value (Stripe key, OAuth secret, etc.) via PUT, the token stays
+  the same. Your next boot picks up the new value. If you need a
+  long-running process to refresh without restart, schedule a
+  background refetch on a long interval (e.g. every 6 hours).
+
+**What you can trust the platform to do for you:**
+
+- AES-256-GCM at rest, per-row AAD binding (ciphertexts can't be
+  moved between rows).
+- SHA-256-hashed token storage (DB leak alone can't recover your
+  service token).
+- Audit log row on every set/get/revoke (forensics).
+- Rate limiting on `GET /env` (same as the rest of `/api/v1/*`).
+
+Spec: `docs/ARCHITECTURE.md` § 6.4.
+
 ---
 
 ## 10. Common mistakes to avoid

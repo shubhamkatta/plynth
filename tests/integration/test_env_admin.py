@@ -11,7 +11,6 @@ from httpx import AsyncClient
 
 from tests.conftest import platform_admin_headers
 
-
 ADMIN_ENV = "/api/v1/admin/products/producta/env"
 ADMIN_TOKENS = "/api/v1/admin/products/producta/service-tokens"
 ADMIN_B_ENV = "/api/v1/admin/products/productb/env"

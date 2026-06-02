@@ -24,6 +24,11 @@ class HttpConfig:
     token_store: TokenStore
     product_slug: str | None = None
     admin_token: str | None = None
+    # Per-product service token (`pst_…`) for the product-runtime
+    # `/env` path. When `RequestSpec.as_service_token=True` AND this
+    # field is set, the SDK sends `X-Service-Token` and skips
+    # Authorization / X-Platform-Admin-Token. Never expose to clients.
+    service_token: str | None = None
     acting_tenant_slug: str | None = None
     timeout: httpx.Timeout = field(
         default_factory=lambda: httpx.Timeout(30.0, connect=10.0)
@@ -39,6 +44,7 @@ class RequestSpec:
     product_slug: str | None = None
     acting_tenant_slug: str | None = None
     as_platform_admin: bool = False
+    as_service_token: bool = False
     skip_auth: bool = False
     idempotent: bool = False
     idempotency_key: str | None = None
@@ -50,8 +56,17 @@ def build_headers(cfg: HttpConfig, spec: RequestSpec) -> dict[str, str]:
         headers["Content-Type"] = "application/json"
 
     want_admin = spec.as_platform_admin or is_admin_path(spec.path)
+    want_service_token = spec.as_service_token
 
-    if want_admin:
+    if want_service_token:
+        if not cfg.service_token:
+            raise PlynthApiError(
+                401,
+                "no_service_token",
+                "Service token not configured on client.",
+            )
+        headers["X-Service-Token"] = cfg.service_token
+    elif want_admin:
         if not cfg.admin_token:
             raise PlynthApiError(
                 401,

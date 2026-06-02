@@ -8,6 +8,13 @@ export interface HttpConfig {
   baseUrl: string;
   productSlug?: string;
   adminToken?: string;
+  /**
+   * Per-product service token (`pst_…`). When set AND the request opts
+   * into `asServiceToken: true`, the SDK sends `X-Service-Token` and
+   * skips Bearer / admin headers. The token implies a product, so
+   * `X-Product-Slug` is optional on those calls.
+   */
+  serviceToken?: string;
   actingTenantSlug?: string;
   tokenStore: TokenStore;
   fetch?: typeof fetch;
@@ -22,6 +29,7 @@ export interface RequestOptions {
   productSlug?: string;
   actingTenantSlug?: string;
   asPlatformAdmin?: boolean;
+  asServiceToken?: boolean;
   skipAuth?: boolean;
   idempotent?: boolean;
   idempotencyKey?: string;
@@ -122,8 +130,18 @@ export class HttpClient {
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
     const wantAdmin = opts.asPlatformAdmin === true || isAdminPath(opts.path);
+    const wantServiceToken = opts.asServiceToken === true;
 
-    if (wantAdmin) {
+    if (wantServiceToken) {
+      if (!this.#cfg.serviceToken) {
+        throw new PlynthApiError(401, {
+          code: "no_service_token",
+          message: "Service token not configured on client.",
+          details: {},
+        });
+      }
+      headers["X-Service-Token"] = this.#cfg.serviceToken;
+    } else if (wantAdmin) {
       if (!this.#cfg.adminToken) {
         throw new PlynthApiError(401, {
           code: "no_platform_admin_token",

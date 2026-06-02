@@ -37,6 +37,7 @@ dev = [
 Homepage = "https://shubhamkatta.github.io/plynth/"
 Repository = "https://github.com/shubhamkatta/plynth"
 Issues = "https://github.com/shubhamkatta/plynth/issues"
+Changelog = "https://github.com/shubhamkatta/plynth/blob/main/sdks/python/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["plynth_sdk"]

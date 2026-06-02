@@ -16,6 +16,10 @@ from plynth_sdk.types import (
     CreateTenantRequest,
     CreditLedgerEntry,
     CreditWallet,
+    EnvVarDetail,
+    EnvVarListItem,
+    EnvVarPatchRequest,
+    EnvVarSetRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     GoogleLoginRequest,
@@ -33,6 +37,9 @@ from plynth_sdk.types import (
     RegisterRequest,
     ResetPasswordRequest,
     Role,
+    ServiceTokenCreateRequest,
+    ServiceTokenIssued,
+    ServiceTokenResponse,
     Subscription,
     Tenant,
     Tokens,
@@ -248,4 +255,73 @@ class ProductsResource(_Base):
                 as_platform_admin=True,
                 idempotent=True,
             )
+        )
+
+
+class AdminEnvResource(_Base):
+    """Admin: per-product env-vars vault CRUD. Uses platform admin token."""
+
+    async def list(self, slug: str) -> List[EnvVarListItem]:
+        return await self._c.request(
+            RequestSpec("GET", f"/api/v1/admin/products/{slug}/env",
+                        as_platform_admin=True)
+        )
+
+    async def set(self, slug: str, key: str, req: EnvVarSetRequest) -> EnvVarListItem:
+        return await self._c.request(
+            RequestSpec("PUT", f"/api/v1/admin/products/{slug}/env/{key}",
+                        json_body=dict(req),
+                        as_platform_admin=True, idempotent=True)
+        )
+
+    async def patch(self, slug: str, key: str, req: EnvVarPatchRequest) -> EnvVarListItem:
+        return await self._c.request(
+            RequestSpec("PATCH", f"/api/v1/admin/products/{slug}/env/{key}",
+                        json_body=dict(req),
+                        as_platform_admin=True, idempotent=True)
+        )
+
+    async def reveal(self, slug: str, key: str, reason: str) -> EnvVarDetail:
+        return await self._c.request(
+            RequestSpec("GET", f"/api/v1/admin/products/{slug}/env/{key}",
+                        params={"reveal": True, "reason": reason},
+                        as_platform_admin=True)
+        )
+
+    async def delete(self, slug: str, key: str) -> None:
+        await self._c.request(
+            RequestSpec("DELETE", f"/api/v1/admin/products/{slug}/env/{key}",
+                        as_platform_admin=True, idempotent=True)
+        )
+
+
+class ServiceTokensResource(_Base):
+    """Admin: per-product service tokens. Returns raw `pst_…` ONCE on issue."""
+
+    async def issue(self, slug: str, req: ServiceTokenCreateRequest) -> ServiceTokenIssued:
+        return await self._c.request(
+            RequestSpec("POST", f"/api/v1/admin/products/{slug}/service-tokens",
+                        json_body=dict(req),
+                        as_platform_admin=True, idempotent=True)
+        )
+
+    async def list(self, slug: str) -> List[ServiceTokenResponse]:
+        return await self._c.request(
+            RequestSpec("GET", f"/api/v1/admin/products/{slug}/service-tokens",
+                        as_platform_admin=True)
+        )
+
+    async def revoke(self, slug: str, token_id: str) -> None:
+        await self._c.request(
+            RequestSpec("DELETE", f"/api/v1/admin/products/{slug}/service-tokens/{token_id}",
+                        as_platform_admin=True, idempotent=True)
+        )
+
+
+class EnvResource(_Base):
+    """Product-runtime: fetch the calling product's env vars (X-Service-Token)."""
+
+    async def fetch(self) -> dict[str, str]:
+        return await self._c.request(
+            RequestSpec("GET", "/api/v1/env", as_service_token=True)
         )

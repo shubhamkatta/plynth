@@ -3,7 +3,7 @@ permission checks, platform-admin token.
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 import jwt
@@ -28,6 +28,9 @@ from app.models.product import Product, ProductStatus
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.services import product as product_svc
+
+if TYPE_CHECKING:
+    from app.models.service_token import ProductServiceToken
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/login", auto_error=False)
 
@@ -379,7 +382,7 @@ def require_service_token(
     the caller is a product backend, not an end-user JWT or a platform
     admin token.
     """
-    from app.models.service_token import ProductServiceToken
+    from app.models.service_token import ProductServiceToken as _ProductServiceToken
     from app.services import service_token as svc_token
 
     async def _checker(
@@ -387,7 +390,7 @@ def require_service_token(
         db: Annotated[AsyncSession, Depends(get_db)],
         x_service_token: Annotated[str | None, Header(alias="X-Service-Token")] = None,
         x_product_slug: Annotated[str | None, Header(alias="X-Product-Slug")] = None,
-    ) -> ProductServiceToken:
+    ) -> _ProductServiceToken:
         if not x_service_token:
             raise Unauthorized("missing X-Service-Token header")
         client_ip = request.client.host if request.client else None

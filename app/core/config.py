@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     # Platform admin (for /admin/products bootstrap). Generate with `openssl rand -hex 32`.
     platform_admin_token: str = ""
 
+    # Per-product env-vars vault (app.services.env_var). 32-byte key,
+    # base64 (url-safe, no padding). Generate with:
+    #   python -c "import os, base64; print(base64.urlsafe_b64encode(os.urandom(32)).rstrip(b'=').decode())"
+    # If unset, the env-vars endpoints return 503 — the rest of the
+    # platform keeps working. NEVER commit a real value; load from /etc
+    # / .env / secret manager only.
+    env_encryption_key: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

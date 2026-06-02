@@ -8,7 +8,7 @@ from uuid import UUID
 
 import jwt
 import structlog
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -363,3 +363,51 @@ async def require_platform_admin(
         raise Forbidden("platform admin is not configured (PLATFORM_ADMIN_TOKEN unset)")
     if not x_platform_admin_token or x_platform_admin_token != settings.platform_admin_token:
         raise Unauthorized("invalid X-Platform-Admin-Token")
+
+
+# --- service token (product-scoped, X-Service-Token: pst_…) --------------------
+
+def require_service_token(
+    scope: str,
+) -> Callable[..., Awaitable["ProductServiceToken"]]:
+    """Dependency factory: authenticate a per-product service token and
+    assert ``scope``. Returns the token row so the route can stamp the
+    product context (the token implies a product — no header needed,
+    though if X-Product-Slug is present it must agree).
+
+    Used for product-runtime endpoints like ``GET /api/v1/env`` where
+    the caller is a product backend, not an end-user JWT or a platform
+    admin token.
+    """
+    from app.models.service_token import ProductServiceToken
+    from app.services import service_token as svc_token
+
+    async def _checker(
+        request: Request,
+        db: Annotated[AsyncSession, Depends(get_db)],
+        x_service_token: Annotated[str | None, Header(alias="X-Service-Token")] = None,
+        x_product_slug: Annotated[str | None, Header(alias="X-Product-Slug")] = None,
+    ) -> ProductServiceToken:
+        if not x_service_token:
+            raise Unauthorized("missing X-Service-Token header")
+        client_ip = request.client.host if request.client else None
+        token = await svc_token.authenticate(
+            db, raw=x_service_token, required_scope=scope, client_ip=client_ip,
+        )
+        # If a product slug is present, it must match the token's product.
+        # Defence in depth — catches the case where a copy/paste mismatch
+        # would otherwise silently target the token's product instead.
+        if x_product_slug:
+            with bypass_product(), bypass_tenant():
+                from app.services import product as product_svc
+                resolved = await product_svc.resolve_slug_to_id(db, x_product_slug)
+            if resolved is None or resolved[0] != token.product_id:
+                raise Forbidden("X-Product-Slug does not match service token's product")
+        set_current_product(token.product_id)
+        structlog.contextvars.bind_contextvars(
+            product_id=str(token.product_id),
+            service_token_id=str(token.id),
+        )
+        return token
+
+    return _checker

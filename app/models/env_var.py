@@ -15,7 +15,9 @@ Lifecycle:
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, LargeBinary, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Index, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import (
@@ -25,7 +27,6 @@ from app.models.base import (
     UUIDPKMixin,
     utcnow,
 )
-from datetime import datetime
 
 
 class ProductEnvVar(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
@@ -57,6 +58,8 @@ class ProductEnvVar(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
 
     # Stamped on set/update for rotation visibility. Distinct from
     # `updated_at` (which moves on any row touch including metadata edits).
+    # TIMESTAMPTZ to match the migration and avoid asyncpg's
+    # "can't subtract offset-naive and offset-aware" rejection.
     last_rotated_at: Mapped[datetime] = mapped_column(
-        default=utcnow, nullable=False
+        DateTime(timezone=True), default=utcnow, nullable=False
     )

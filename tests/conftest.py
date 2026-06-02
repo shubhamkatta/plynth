@@ -9,6 +9,7 @@ and `productb` (used in cross-product isolation tests). Each gets its own
 plans + system roles.
 """
 
+import base64 as _b64
 import os
 from collections.abc import AsyncIterator
 from decimal import Decimal
@@ -28,7 +29,6 @@ os.environ["PLATFORM_ADMIN_TOKEN"] = "test-platform-admin-token"
 # Per-product env-vars vault — deterministic 32-byte key (urlsafe-b64).
 # Generated once at test-suite import; isolates the tests from any host
 # ENV_ENCRYPTION_KEY that might be set.
-import base64 as _b64
 os.environ["ENV_ENCRYPTION_KEY"] = _b64.urlsafe_b64encode(b"\x42" * 32).rstrip(b"=").decode()
 
 from httpx import ASGITransport, AsyncClient

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import platform_admin_headers, product_headers
+from tests.conftest import platform_admin_headers
 
 
 ADMIN_ENV = "/api/v1/admin/products/producta/env"

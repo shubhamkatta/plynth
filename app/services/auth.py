@@ -457,19 +457,35 @@ async def login_with_google(
        register_individual). Otherwise 401 — admin must invite first.
     4. Issue platform JWTs as if the user logged in normally.
 
-    Google client_id / client_secret come from env (GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET). If they're not set we 503 — no point pretending.
+    Google client_id / client_secret resolution (in order):
+      1. ``ProductEnvVar`` rows ``GOOGLE_CLIENT_ID`` / ``GOOGLE_CLIENT_SECRET``
+         for this product — set via ``PUT /admin/products/{slug}/env/{KEY}``.
+      2. Platform-global ``settings.google_client_id`` / ``...secret``
+         (env vars on the API process). Back-compat fallback so existing
+         deployments keep working until they migrate to per-product vault.
+
+    If neither is set the call 401s with "not configured".
     """
     import httpx
 
-    if not settings.google_client_id or not settings.google_client_secret:
+    from app.services import env_var as env_svc
+
+    client_id = await env_svc.get_value_or_default(
+        db, product_id=product_id, key="GOOGLE_CLIENT_ID",
+        default=settings.google_client_id,
+    )
+    client_secret = await env_svc.get_value_or_default(
+        db, product_id=product_id, key="GOOGLE_CLIENT_SECRET",
+        default=settings.google_client_secret,
+    )
+    if not client_id or not client_secret:
         raise Unauthorized("Google login is not configured on this platform")
 
     async with httpx.AsyncClient(timeout=10.0) as http:
         token_resp = await http.post(GOOGLE_TOKEN_URL, data={
             "code":          code,
-            "client_id":     settings.google_client_id,
-            "client_secret": settings.google_client_secret,
+            "client_id":     client_id,
+            "client_secret": client_secret,
             "redirect_uri":  redirect_uri,
             "grant_type":    "authorization_code",
         })

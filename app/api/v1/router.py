@@ -4,6 +4,8 @@ from app.api.v1 import (
     admin,
     auth,
     credits,
+    env,
+    env_admin,
     jobs,
     plans,
     roles,
@@ -32,3 +34,11 @@ api_router.include_router(
     prefix="/admin/products/{slug}/webhooks",
     tags=["webhooks-admin"],
 )
+# Per-product env-vars vault — admin CRUD + service tokens.
+api_router.include_router(
+    env_admin.router,
+    prefix="/admin/products/{slug}",
+    tags=["env-admin"],
+)
+# Product-runtime fetch — authenticated by X-Service-Token (pst_…).
+api_router.include_router(env.router, prefix="/env", tags=["env"])

@@ -199,6 +199,49 @@ MIGRATIONS: list[tuple[str, str]] = [
           ON webhook_deliveries (endpoint_id)
         """,
     ),
+    # Per-product environment-variables vault + service tokens.
+    # See app/services/env_var.py and app/services/service_token.py.
+    # value_encrypted is BYTEA: nonce(12 bytes) || AES-GCM(ciphertext+tag)
+    # with AAD = product_id || key. is_secret=false rows store utf-8
+    # plaintext bytes (no encryption) for public-safe config.
+    (
+        "0008_env_vars_and_service_tokens",
+        """
+        CREATE TABLE IF NOT EXISTS product_env_vars (
+          id              UUID PRIMARY KEY,
+          product_id      UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          key             VARCHAR(128) NOT NULL,
+          value_encrypted BYTEA NOT NULL,
+          is_secret       BOOLEAN NOT NULL DEFAULT TRUE,
+          description     VARCHAR(255),
+          last_rotated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_product_env_vars_product_id
+          ON product_env_vars (product_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_product_env_vars_key
+          ON product_env_vars (product_id, key);
+
+        CREATE TABLE IF NOT EXISTS product_service_tokens (
+          id            UUID PRIMARY KEY,
+          product_id    UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          name          VARCHAR(128) NOT NULL,
+          token_hash    VARCHAR(64) NOT NULL,
+          scopes        JSONB NOT NULL DEFAULT '["env:read"]'::jsonb,
+          expires_at    TIMESTAMPTZ,
+          revoked_at    TIMESTAMPTZ,
+          last_used_at  TIMESTAMPTZ,
+          last_used_ip  VARCHAR(64),
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_product_service_tokens_product_id
+          ON product_service_tokens (product_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_service_tokens_token_hash
+          ON product_service_tokens (token_hash)
+        """,
+    ),
 ]
 
 

@@ -35,13 +35,13 @@ async def test_set_and_list_env_var_secret(client: AsyncClient) -> None:
     assert body["description"] == "Stripe live key"
     # List never includes the plaintext for secrets.
     assert "value" not in body or body["value"] is None
-    assert body["preview"] == "sk_l…t_xyz"
+    assert body["preview"] == "sk_l…_xyz"  # first 4 + … + last 4 of "sk_live_secret_xyz"
 
     listing = await client.get(ADMIN_ENV, headers=platform_admin_headers())
     assert listing.status_code == 200
     items = listing.json()
     assert len(items) == 1
-    assert items[0]["preview"] == "sk_l…t_xyz"
+    assert items[0]["preview"] == "sk_l…_xyz"
 
 
 @pytest.mark.asyncio

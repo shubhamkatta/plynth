@@ -1,0 +1,60 @@
+name: Publish @plynth/sdk
+
+on:
+  push:
+    tags:
+      - "sdks/typescript-v*"
+
+# Uses NPM_TOKEN secret (Automation type). Generate at npmjs.com → access
+# tokens → "Automation". Add to repo: Settings → Secrets → Actions → NPM_TOKEN.
+
+jobs:
+  publish:
+    name: build + publish to npm
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: sdks/typescript
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: npm install
+
+      - name: Verify tag matches package version
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#sdks/typescript-v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "tag ($TAG_VERSION) does not match package.json version ($PKG_VERSION)" >&2
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Pack (dry-run, for the log)
+        run: npm pack --dry-run
+
+      - name: Publish
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

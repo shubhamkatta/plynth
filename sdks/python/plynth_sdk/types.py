@@ -312,3 +312,60 @@ class UpdateProductRequest(TypedDict, total=False):
     name: str
     is_active: bool
     settings: dict[str, Any]
+
+
+# --- env-vars vault (per-product, admin namespace) ---
+
+class EnvVarSetRequest(TypedDict, total=False):
+    value: str
+    is_secret: bool
+    description: str | None
+
+
+class EnvVarPatchRequest(TypedDict, total=False):
+    is_secret: bool
+    description: str | None
+
+
+class EnvVarListItem(TypedDict, total=False):
+    key: str
+    is_secret: bool
+    description: str | None
+    last_rotated_at: str
+    preview: str | None
+    value: str | None
+
+
+class EnvVarDetail(TypedDict):
+    key: str
+    value: str
+    is_secret: bool
+    description: str | None
+    last_rotated_at: str
+    created_at: str
+    updated_at: str
+
+
+# --- service tokens (per-product) ---
+
+class ServiceTokenCreateRequest(TypedDict, total=False):
+    name: str
+    scopes: list[str]
+    expires_at: str | None
+
+
+class ServiceTokenResponse(TypedDict):
+    id: str
+    name: str
+    scopes: list[str]
+    expires_at: str | None
+    revoked_at: str | None
+    last_used_at: str | None
+    last_used_ip: str | None
+    created_at: str
+    updated_at: str
+
+
+class ServiceTokenIssued(ServiceTokenResponse):
+    # Raw pst_… returned ONLY at creation — never echoed by list/get.
+    token: str

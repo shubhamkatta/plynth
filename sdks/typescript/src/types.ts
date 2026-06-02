@@ -314,3 +314,62 @@ export interface UpdateProductRequest {
   is_active?: boolean;
   settings?: Record<string, unknown>;
 }
+
+// --- env vars (per-product vault, admin namespace) ---
+
+export interface EnvVarSetRequest {
+  value: string;
+  is_secret?: boolean;
+  description?: string;
+}
+
+export interface EnvVarPatchRequest {
+  is_secret?: boolean;
+  description?: string;
+}
+
+export interface EnvVarListItem {
+  key: string;
+  is_secret: boolean;
+  description: string | null;
+  last_rotated_at: string;
+  /** Set for `is_secret: true` rows only. Looks like `sk_l…cdef`. */
+  preview?: string | null;
+  /** Set for `is_secret: false` rows only — full plaintext. */
+  value?: string | null;
+}
+
+export interface EnvVarDetail {
+  key: string;
+  value: string;
+  is_secret: boolean;
+  description: string | null;
+  last_rotated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// --- service tokens (per-product, used to call GET /env) ---
+
+export interface ServiceTokenCreateRequest {
+  name: string;
+  scopes?: string[];
+  expires_at?: string | null;
+}
+
+export interface ServiceTokenResponse {
+  id: string;
+  name: string;
+  scopes: string[];
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  last_used_ip: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceTokenIssued extends ServiceTokenResponse {
+  /** The raw `pst_…` token. Returned ONLY at creation; never echoed by list/get. */
+  token: string;
+}

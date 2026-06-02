@@ -106,6 +106,42 @@ try {
 | `client.credits`       | `/api/v1/credits/*`  |
 | `client.roles`         | `/api/v1/roles/*`    |
 | `client.products`      | `/api/v1/admin/products/*` (admin-token only) |
+| `client.adminEnv`      | `/api/v1/admin/products/{slug}/env/*` (admin-token only) |
+| `client.serviceTokens` | `/api/v1/admin/products/{slug}/service-tokens/*` (admin-token only) |
+| `client.env`           | `/api/v1/env` (service token only — `X-Service-Token`) |
+
+### Per-product env vars (vault)
+
+Admin: manage values + issue service tokens.
+
+```ts
+const admin = new PlynthClient({ baseUrl, adminToken: process.env.PLATFORM_ADMIN_TOKEN });
+
+await admin.adminEnv.set("mayva", "STRIPE_LIVE_KEY", {
+  value: "sk_live_xxx",
+  is_secret: true,
+  description: "Stripe live key",
+});
+
+const issued = await admin.serviceTokens.issue("mayva", {
+  name: "mayva-prod-backend",
+  scopes: ["env:read"],
+});
+console.log(issued.token);  // "pst_…" — store in your secret manager NOW
+```
+
+Product runtime: fetch the vault into `process.env` at boot.
+
+```ts
+const runtime = new PlynthClient({
+  baseUrl: "https://api.example.com",
+  serviceToken: process.env.PLYNTH_SVC_TOKEN!,
+});
+const env = await runtime.env.fetch();
+for (const [k, v] of Object.entries(env)) process.env[k] ??= v;
+```
+
+**Never** ship the service token to a browser / mobile / Electron renderer.
 
 ## Compatibility
 
@@ -117,8 +153,9 @@ try {
 
 - Docs: <https://shubhamkatta.github.io/plynth/>
 - Integration guide: [`docs/INTEGRATION.md`](https://github.com/shubhamkatta/plynth/blob/main/docs/INTEGRATION.md)
+- Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
 - Issues: <https://github.com/shubhamkatta/plynth/issues>
 
 ## License
 
-MIT
+MIT — see [`LICENSE`](./LICENSE).

@@ -1,0 +1,80 @@
+name: Publish plynth-sdk
+
+on:
+  push:
+    tags:
+      - "sdks/python-v*"
+
+# Uses PyPI Trusted Publishing (OIDC) — no PYPI_TOKEN secret required.
+# Setup once at https://pypi.org/manage/account/publishing/:
+#   - PyPI project name:   plynth-sdk
+#   - Owner:               shubhamkatta
+#   - Repository:          plynth
+#   - Workflow filename:   sdk-python-publish.yml
+#   - Environment name:    pypi
+# Then create the `pypi` environment in repo Settings → Environments
+# (no secrets needed; the workflow's id-token is the credential).
+
+jobs:
+  publish:
+    name: build + publish to PyPI
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+      url: https://pypi.org/project/plynth-sdk/
+
+    permissions:
+      contents: read
+      # Required for PyPI Trusted Publishing — issues the OIDC token PyPI
+      # exchanges for short-lived publish credentials.
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: sdks/python
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+          pip install -e ".[dev]"
+
+      - name: Verify tag matches pyproject version
+        run: |
+          PKG_VERSION="$(python -c "import tomllib; print(tomllib.loads(open('pyproject.toml','rb').read().decode())['project']['version'])")"
+          TAG_VERSION="${GITHUB_REF_NAME#sdks/python-v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "tag ($TAG_VERSION) does not match pyproject version ($PKG_VERSION)" >&2
+            exit 1
+          fi
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Typecheck (mypy)
+        run: mypy plynth_sdk
+
+      - name: Test (pytest)
+        run: pytest -q
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdks/python/dist
+          # Trusted publishing — no password / token needed.

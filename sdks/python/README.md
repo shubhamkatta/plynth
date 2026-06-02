@@ -118,6 +118,35 @@ except PlynthNetworkError:
 | `client.credits`      | `/api/v1/credits/*`                  |
 | `client.roles`        | `/api/v1/roles/*`                    |
 | `client.products`     | `/api/v1/admin/products/*` (admin)   |
+| `client.admin_env`    | `/api/v1/admin/products/{slug}/env/*` (admin) |
+| `client.service_tokens` | `/api/v1/admin/products/{slug}/service-tokens/*` (admin) |
+| `client.env`          | `/api/v1/env` (service token — `X-Service-Token`) |
+
+### Per-product env vars (vault)
+
+Admin — manage values + issue service tokens:
+
+```python
+with PlynthClient(base_url=BASE, admin_token=os.environ["PLATFORM_ADMIN_TOKEN"]) as admin:
+    admin.admin_env.set("mayva", "STRIPE_LIVE_KEY",
+                       {"value": "sk_live_xxx", "is_secret": True,
+                        "description": "Stripe live key"})
+    issued = admin.service_tokens.issue("mayva",
+                                        {"name": "mayva-prod-backend",
+                                         "scopes": ["env:read"]})
+    print(issued["token"])   # pst_…  — store in your secret manager NOW
+```
+
+Product runtime — fetch the vault into `os.environ` at boot:
+
+```python
+with PlynthClient(base_url=BASE, service_token=os.environ["PLYNTH_SVC_TOKEN"]) as c:
+    env = c.env.fetch()
+for k, v in env.items():
+    os.environ.setdefault(k, v)
+```
+
+**Never** ship the service token to a browser / mobile / Electron renderer.
 
 ## Compatibility
 
@@ -129,8 +158,9 @@ except PlynthNetworkError:
 
 - Docs: <https://shubhamkatta.github.io/plynth/>
 - Integration guide: [`docs/INTEGRATION.md`](https://github.com/shubhamkatta/plynth/blob/main/docs/INTEGRATION.md)
+- Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
 - Issues: <https://github.com/shubhamkatta/plynth/issues>
 
 ## License
 
-MIT
+MIT — see [`LICENSE`](./LICENSE).

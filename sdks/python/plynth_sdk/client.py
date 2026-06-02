@@ -28,6 +28,7 @@ class PlynthClient:
         base_url: str,
         product_slug: str | None = None,
         admin_token: str | None = None,
+        service_token: str | None = None,
         acting_tenant_slug: str | None = None,
         token_store: TokenStore | None = None,
         timeout: float = 30.0,
@@ -39,6 +40,7 @@ class PlynthClient:
             token_store=self.token_store,
             product_slug=product_slug,
             admin_token=admin_token,
+            service_token=service_token,
             acting_tenant_slug=acting_tenant_slug,
             timeout=httpx.Timeout(timeout, connect=min(timeout, 10.0)),
         )
@@ -56,6 +58,9 @@ class PlynthClient:
         self.credits = resources.CreditsResource(self)
         self.roles = resources.RolesResource(self)
         self.products = resources.ProductsResource(self)
+        self.admin_env = resources.AdminEnvResource(self)
+        self.service_tokens = resources.ServiceTokensResource(self)
+        self.env = resources.EnvResource(self)
 
     # --- context manager ------------------------------------------------
 

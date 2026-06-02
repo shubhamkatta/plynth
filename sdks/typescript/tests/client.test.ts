@@ -152,6 +152,104 @@ describe("refresh-once on 401", () => {
   });
 });
 
+describe("env-vars vault + service tokens", () => {
+  it("admin env.set sends platform admin token + idempotency key", async () => {
+    const calls: { url: string; headers: Record<string, string>; body: string | null }[] = [];
+    const fetchMock = mockFetch((url, init) => {
+      calls.push({
+        url,
+        headers: Object.fromEntries(new Headers(init.headers).entries()),
+        body: typeof init.body === "string" ? init.body : null,
+      });
+      return jsonResponse({
+        key: "STRIPE_LIVE_KEY", is_secret: true, description: null,
+        last_rotated_at: "2026-01-01T00:00:00Z", preview: "sk_l…cdef",
+      });
+    });
+    const c = new PlynthClient({
+      baseUrl: "https://api.test",
+      adminToken: "admin-secret",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await c.adminEnv.set("mayva", "STRIPE_LIVE_KEY", {
+      value: "sk_live_xxx", is_secret: true,
+    });
+    expect(calls[0]?.url).toBe("https://api.test/api/v1/admin/products/mayva/env/STRIPE_LIVE_KEY");
+    expect(calls[0]?.headers["x-platform-admin-token"]).toBe("admin-secret");
+    expect(calls[0]?.headers["idempotency-key"]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(calls[0]?.body).toContain('"is_secret":true');
+  });
+
+  it("env.fetch sends X-Service-Token instead of Bearer", async () => {
+    const calls: Record<string, string>[] = [];
+    const fetchMock = mockFetch((_url, init) => {
+      calls.push(Object.fromEntries(new Headers(init.headers).entries()));
+      return jsonResponse({ GOOGLE_CLIENT_ID: "abc", STRIPE_LIVE_KEY: "sk_xxx" });
+    });
+    const c = new PlynthClient({
+      baseUrl: "https://api.test",
+      serviceToken: "pst_deadbeefcafe1234567890abcdef0011",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const env = await c.env.fetch();
+    expect(env).toEqual({ GOOGLE_CLIENT_ID: "abc", STRIPE_LIVE_KEY: "sk_xxx" });
+    expect(calls[0]?.["x-service-token"]).toBe("pst_deadbeefcafe1234567890abcdef0011");
+    expect(calls[0]?.["authorization"]).toBeUndefined();
+    expect(calls[0]?.["x-platform-admin-token"]).toBeUndefined();
+  });
+
+  it("env.fetch without serviceToken throws", async () => {
+    const c = new PlynthClient({
+      baseUrl: "https://api.test",
+      fetch: vi.fn() as unknown as typeof fetch,
+    });
+    await expect(c.env.fetch()).rejects.toMatchObject({
+      name: "PlynthApiError",
+      code: "no_service_token",
+    });
+  });
+
+  it("admin env.reveal includes reveal=true&reason in query", async () => {
+    let lastUrl = "";
+    const fetchMock = mockFetch((url) => {
+      lastUrl = url;
+      return jsonResponse({
+        key: "X", value: "plaintext", is_secret: true, description: null,
+        last_rotated_at: "2026-01-01T00:00:00Z",
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      });
+    });
+    const c = new PlynthClient({
+      baseUrl: "https://api.test",
+      adminToken: "a",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const detail = await c.adminEnv.reveal("mayva", "X", "rotation");
+    expect(detail.value).toBe("plaintext");
+    expect(lastUrl).toContain("reveal=true");
+    expect(lastUrl).toContain("reason=rotation");
+  });
+
+  it("serviceTokens.issue returns the raw token in the response", async () => {
+    const fetchMock = mockFetch(() => jsonResponse({
+      id: "deadbeef-cafe-1111-2222-333344445555",
+      name: "backend", scopes: ["env:read"],
+      expires_at: null, revoked_at: null,
+      last_used_at: null, last_used_ip: null,
+      created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      token: "pst_deadbeefcafe1234567890abcdef0011",
+    }, 201));
+    const c = new PlynthClient({
+      baseUrl: "https://api.test", adminToken: "a",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    const issued = await c.serviceTokens.issue("mayva", { name: "backend" });
+    expect(issued.token).toBe("pst_deadbeefcafe1234567890abcdef0011");
+    expect(issued.scopes).toEqual(["env:read"]);
+  });
+});
+
+
 describe("error envelope", () => {
   it("parses {code,message,details} into PlynthApiError", async () => {
     const fetchMock = mockFetch(() =>

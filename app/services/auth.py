@@ -490,9 +490,26 @@ async def login_with_google(
             "grant_type":    "authorization_code",
         })
         if token_resp.status_code != 200:
-            log.warning("google.token_exchange_failed",
-                        status=token_resp.status_code, body=token_resp.text[:300])
-            raise Unauthorized("google code exchange failed")
+            # TEMPORARY DIAGNOSTIC — Mayva oauth debugging 2026-06-02.
+            # Logs the full Google body + the redirect_uri Plynth forwarded
+            # + the client_id tail so we can diff against what Mayva sent
+            # to Google's /auth endpoint. Revert immediately after capture.
+            log.warning(
+                "google.token_exchange_failed",
+                status=token_resp.status_code,
+                body=token_resp.text[:300],
+                redirect_uri_forwarded=redirect_uri,
+                client_id_tail=client_id[-16:] if client_id else None,
+                code_prefix=code[:8] if code else None,
+            )
+            raise Unauthorized(
+                "google code exchange failed",
+                details={
+                    "google_body":        token_resp.text[:300],
+                    "redirect_uri_sent":  redirect_uri,
+                    "client_id_tail":     client_id[-16:] if client_id else None,
+                },
+            )
         access = token_resp.json().get("access_token")
         if not access:
             raise Unauthorized("google response missing access_token")

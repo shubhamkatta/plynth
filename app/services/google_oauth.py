@@ -33,6 +33,7 @@ from uuid import UUID
 
 import httpx
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, Unauthorized, ValidationFailed
 from app.services import env_var as env_svc
@@ -50,7 +51,7 @@ class GoogleUpstreamError(AppError):
 
 
 async def _find_client_secret(
-    db, *, product_id: UUID, client_id: str
+    db: AsyncSession, *, product_id: UUID, client_id: str
 ) -> str:
     """Resolve the vault secret matching ``client_id``.
 

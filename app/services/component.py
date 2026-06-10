@@ -24,7 +24,6 @@ from app.models.component import ProductComponent, UserComponentOverride
 from app.models.user import User
 from app.services import audit
 
-
 # ---------------------------------------------------------------------
 # Component catalog (admin-managed)
 # ---------------------------------------------------------------------

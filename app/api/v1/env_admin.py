@@ -91,6 +91,7 @@ async def list_env_vars(
             is_secret=r.is_secret,
             description=r.description,
             last_rotated_at=r.last_rotated_at,
+            is_server_only=env_svc.is_server_only(r.key),
         )
         if r.is_secret:
             item.preview = env_svc.preview(r)
@@ -122,6 +123,7 @@ async def set_env_var(
         is_secret=row.is_secret,
         description=row.description,
         last_rotated_at=row.last_rotated_at,
+        is_server_only=env_svc.is_server_only(row.key),
     )
     if row.is_secret:
         item.preview = env_svc.preview(row)
@@ -162,6 +164,7 @@ async def patch_env_var(
     item = EnvVarListItem(
         key=row.key, is_secret=row.is_secret,
         description=row.description, last_rotated_at=row.last_rotated_at,
+        is_server_only=env_svc.is_server_only(row.key),
     )
     if row.is_secret:
         item.preview = env_svc.preview(row)

@@ -47,6 +47,11 @@ class EnvVarListItem(BaseModel):
     last_rotated_at: datetime
     preview:         str | None = None  # set for is_secret=true only
     value:           str | None = None  # set for is_secret=false only
+    # True when the key matches SERVER_ONLY_KEY_PATTERNS — the value is
+    # used by the platform on the product's behalf (e.g. Google OAuth
+    # exchange) and is filtered out of GET /api/v1/env. Admin can still
+    # reveal / rotate / delete.
+    is_server_only:  bool = False
 
 
 class EnvVarDetail(BaseModel):

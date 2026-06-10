@@ -334,6 +334,10 @@ class EnvVarListItem(TypedDict, total=False):
     last_rotated_at: str
     preview: str | None
     value: str | None
+    # True when the key matches the platform's server-only pattern
+    # (e.g. GOOGLE_*_CLIENT_SECRET). Value stays in the vault but
+    # is filtered out of the runtime GET /env response.
+    is_server_only: bool
 
 
 class EnvVarDetail(TypedDict):

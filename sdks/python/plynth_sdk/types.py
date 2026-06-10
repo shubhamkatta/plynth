@@ -369,3 +369,48 @@ class ServiceTokenResponse(TypedDict):
 class ServiceTokenIssued(ServiceTokenResponse):
     # Raw pst_… returned ONLY at creation — never echoed by list/get.
     token: str
+
+
+# --- components (per-product feature modules) ---
+
+class ComponentCreateRequest(TypedDict, total=False):
+    code: str
+    name: str
+    description: str | None
+    is_default_enabled: bool
+    is_active: bool
+    settings: dict[str, Any]
+
+
+class ComponentUpdateRequest(TypedDict, total=False):
+    name: str | None
+    description: str | None
+    is_default_enabled: bool
+    is_active: bool
+    settings: dict[str, Any]
+
+
+class ComponentResponse(TypedDict):
+    id: str
+    code: str
+    name: str
+    description: str | None
+    is_default_enabled: bool
+    is_active: bool
+    settings: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
+class UserComponentOverrideRequest(TypedDict, total=False):
+    is_enabled: bool
+    reason: str | None
+
+
+class UserComponentStatus(TypedDict, total=False):
+    code: str
+    name: str
+    is_enabled: bool
+    source: str
+    description: str | None
+    reason: str | None

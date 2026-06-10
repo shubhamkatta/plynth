@@ -242,6 +242,56 @@ MIGRATIONS: list[tuple[str, str]] = [
           ON product_service_tokens (token_hash)
         """,
     ),
+    # Per-product components catalog + per-user enable/disable overrides.
+    # Effective access for (user, component):
+    #   override row → override.is_enabled
+    #   no override row → component.is_default_enabled
+    # Component delete cascades to override rows (FK).
+    (
+        "0009_product_components",
+        """
+        CREATE TABLE IF NOT EXISTS product_components (
+          id                 UUID PRIMARY KEY,
+          product_id         UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          code               VARCHAR(64)  NOT NULL,
+          name               VARCHAR(128) NOT NULL,
+          description        VARCHAR(255),
+          is_default_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          is_active          BOOLEAN NOT NULL DEFAULT TRUE,
+          settings           JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_product_components_product_id
+          ON product_components (product_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_product_components_product_code
+          ON product_components (product_id, code);
+
+        CREATE TABLE IF NOT EXISTS user_component_overrides (
+          id              UUID PRIMARY KEY,
+          product_id      UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          tenant_id       UUID NOT NULL REFERENCES tenants(id)  ON DELETE CASCADE,
+          user_id         UUID NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+          component_id    UUID NOT NULL REFERENCES product_components(id) ON DELETE CASCADE,
+          is_enabled      BOOLEAN NOT NULL,
+          reason          VARCHAR(255),
+          set_by_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
+          set_at          TIMESTAMPTZ NOT NULL,
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_user_component_overrides_product_id
+          ON user_component_overrides (product_id);
+        CREATE INDEX IF NOT EXISTS ix_user_component_overrides_tenant_id
+          ON user_component_overrides (tenant_id);
+        CREATE INDEX IF NOT EXISTS ix_user_component_overrides_user_id
+          ON user_component_overrides (user_id);
+        CREATE INDEX IF NOT EXISTS ix_user_component_overrides_component_id
+          ON user_component_overrides (component_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_user_component_overrides_user_component
+          ON user_component_overrides (user_id, component_id)
+        """,
+    ),
 ]
 
 

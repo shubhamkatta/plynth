@@ -86,3 +86,7 @@ class MeResponse(BaseModel):
     is_active: bool
     is_verified: bool
     permissions: list[str]
+    # Map of active component code → whether the calling user has access.
+    # Empty dict if the product has no components yet. Clients use this to
+    # render conditionally without a second round-trip.
+    components: dict[str, bool] = {}

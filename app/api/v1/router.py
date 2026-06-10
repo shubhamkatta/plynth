@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from app.api.v1 import (
     admin,
     auth,
+    components,
+    components_admin,
     credits,
     env,
     env_admin,
@@ -42,3 +44,12 @@ api_router.include_router(
 )
 # Product-runtime fetch — authenticated by X-Service-Token (pst_…).
 api_router.include_router(env.router, prefix="/env", tags=["env"])
+# Per-product components catalog (admin) + user override management.
+api_router.include_router(
+    components_admin.router,
+    prefix="/admin/products/{slug}/components",
+    tags=["components-admin"],
+)
+api_router.include_router(components.router, prefix="/components", tags=["components"])
+# User-component override endpoints hang off /users/{user_id}/components/*.
+api_router.include_router(components.users_router, prefix="/users", tags=["components"])

@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 # Allowed scope strings. Add new entries as new product-scoped endpoints land.
-ALLOWED_SCOPES = frozenset({"env:read"})
+ALLOWED_SCOPES = frozenset({"env:read", "google:exchange"})
 
 
 class ServiceTokenCreate(BaseModel):

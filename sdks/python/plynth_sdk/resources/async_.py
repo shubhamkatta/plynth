@@ -10,6 +10,9 @@ from plynth_sdk.types import (
     AssignRoleRequest,
     CancelSubscriptionRequest,
     ChangeSubscriptionRequest,
+    ComponentCreateRequest,
+    ComponentResponse,
+    ComponentUpdateRequest,
     ConsumeCreditsRequest,
     CreateProductRequest,
     CreateRoleRequest,
@@ -48,6 +51,8 @@ from plynth_sdk.types import (
     UpdateTenantRequest,
     UpdateUserRequest,
     User,
+    UserComponentOverrideRequest,
+    UserComponentStatus,
 )
 
 if TYPE_CHECKING:
@@ -324,4 +329,60 @@ class EnvResource(_Base):
     async def fetch(self) -> dict[str, str]:
         return await self._c.request(
             RequestSpec("GET", "/api/v1/env", as_service_token=True)
+        )
+
+
+class AdminComponentsResource(_Base):
+    """Admin: per-product component catalog CRUD."""
+
+    async def list(self, slug: str) -> List[ComponentResponse]:
+        return await self._c.request(
+            RequestSpec("GET", f"/api/v1/admin/products/{slug}/components",
+                        as_platform_admin=True)
+        )
+
+    async def create(self, slug: str, req: ComponentCreateRequest) -> ComponentResponse:
+        return await self._c.request(
+            RequestSpec("POST", f"/api/v1/admin/products/{slug}/components",
+                        json_body=dict(req),
+                        as_platform_admin=True, idempotent=True)
+        )
+
+    async def update(self, slug: str, code: str, req: ComponentUpdateRequest) -> ComponentResponse:
+        return await self._c.request(
+            RequestSpec("PATCH", f"/api/v1/admin/products/{slug}/components/{code}",
+                        json_body=dict(req),
+                        as_platform_admin=True, idempotent=True)
+        )
+
+    async def delete(self, slug: str, code: str) -> None:
+        await self._c.request(
+            RequestSpec("DELETE", f"/api/v1/admin/products/{slug}/components/{code}",
+                        as_platform_admin=True, idempotent=True)
+        )
+
+
+class ComponentsResource(_Base):
+    """User-facing components surface."""
+
+    async def list(self) -> List[UserComponentStatus]:
+        return await self._c.request(RequestSpec("GET", "/api/v1/components"))
+
+    async def list_for_user(self, user_id: str) -> List[UserComponentStatus]:
+        return await self._c.request(
+            RequestSpec("GET", f"/api/v1/users/{user_id}/components")
+        )
+
+    async def set_override(
+        self, user_id: str, code: str, req: UserComponentOverrideRequest,
+    ) -> UserComponentStatus:
+        return await self._c.request(
+            RequestSpec("PUT", f"/api/v1/users/{user_id}/components/{code}",
+                        json_body=dict(req), idempotent=True)
+        )
+
+    async def clear_override(self, user_id: str, code: str) -> None:
+        await self._c.request(
+            RequestSpec("DELETE", f"/api/v1/users/{user_id}/components/{code}",
+                        idempotent=True)
         )

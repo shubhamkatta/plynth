@@ -21,6 +21,7 @@ from app.schemas.auth import (
     TokenPair,
 )
 from app.services import auth as auth_svc
+from app.services import component as component_svc
 from app.services.rbac import list_user_permission_codes
 
 router = APIRouter()
@@ -208,6 +209,8 @@ async def login_google(
 @router.get("/me", response_model=MeResponse)
 async def me(user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]) -> MeResponse:
     perms = await list_user_permission_codes(db, user)
+    component_rows = await component_svc.user_effective_components(db, user=user)
+    components = {c.code: is_enabled for (c, is_enabled, _src, _reason) in component_rows}
     return MeResponse(
         id=user.id,
         product_id=user.product_id,
@@ -217,4 +220,5 @@ async def me(user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]) ->
         is_active=user.is_active,
         is_verified=user.is_verified,
         permissions=sorted(perms),
+        components=components,
     )

@@ -43,6 +43,9 @@ SYSTEM_PERMISSIONS: list[tuple[str, str]] = [
     ("storage:read", "Read storage collections and documents"),
     ("storage:write", "Create collections + upsert documents"),
     ("storage:delete", "Delete storage documents"),
+    # Components (docs/architecture.md § 6.5)
+    ("components:read", "List components + per-user effective access"),
+    ("components:override", "Enable / disable a component for a specific user"),
 ]
 
 SYSTEM_ROLES: dict[str, list[str]] = {
@@ -58,6 +61,8 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         # Jobs + Storage: admin gets the full surface.
         "jobs:read", "jobs:write", "jobs:cancel",
         "storage:read", "storage:write", "storage:delete",
+        # Components: admins manage who in their tenant gets what.
+        "components:read", "components:override",
     ],
     "member": [
         "tenants:read",
@@ -67,6 +72,8 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         # Members read jobs / storage but cannot enqueue or delete by default.
         "jobs:read",
         "storage:read",
+        # Members see component listings + their own access status.
+        "components:read",
     ],
 }
 

@@ -61,6 +61,8 @@ class PlynthClient:
         self.admin_env = resources.AdminEnvResource(self)
         self.service_tokens = resources.ServiceTokensResource(self)
         self.env = resources.EnvResource(self)
+        self.admin_components = resources.AdminComponentsResource(self)
+        self.components = resources.ComponentsResource(self)
 
     # --- context manager ------------------------------------------------
 

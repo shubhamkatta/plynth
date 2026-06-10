@@ -726,6 +726,11 @@ Grouped by typical Electron use case. Full bodies + headers in
 | Reveal one env var (admin) | `GET /api/v1/admin/products/{slug}/env/{KEY}?reveal=true&reason=...` | High-severity audit row |
 | Issue a service token (admin) | `POST /api/v1/admin/products/{slug}/service-tokens` | Returns `pst_…` once |
 | Fetch all env vars (product backend) | `GET /api/v1/env`  with `X-Service-Token: pst_…` | Plaintext; never expose token to clients |
+| List my components (gate UI) | `GET /api/v1/components` | Returns code/name/is_enabled/source per active component |
+| List a user's components (tenant admin) | `GET /api/v1/users/{user_id}/components` | Permission: `components:read` |
+| Enable / disable a component for a user | `PUT /api/v1/users/{user_id}/components/{code}` | Permission: `components:override` |
+| Clear a per-user override (revert to default) | `DELETE /api/v1/users/{user_id}/components/{code}` | Permission: `components:override` |
+| Create / update / delete a component (admin) | `POST/PATCH/DELETE /api/v1/admin/products/{slug}/components/...` | Platform-admin token |
 
 ### 6.2 Jobs API (designed — not implemented)
 
@@ -1101,6 +1106,112 @@ curl https://api.example.com/api/v1/env -H "X-Service-Token: pst_…"
 # → {"STRIPE_LIVE_KEY":"sk_live_...","GOOGLE_CLIENT_ID":"...",...}
 ```
 
+### 6.5 Components (implemented)
+
+> Source-of-truth contract for the per-product components system.
+> Implemented in `app/{models,schemas,services,api/v1}/component*.py`.
+> Schema migration: `scripts/migrate.py` step `0009_product_components`.
+
+#### Purpose
+
+A **component** is a discrete feature module within a product (e.g.
+`voice-overlay`, `morning-brief`, `news-triage` for Mayva). The
+platform owns the catalog; tenant admins toggle per-user access. The
+default is permissive: every user gets every component unless an
+explicit per-user override turns it off.
+
+This is the natural shape for product feature-gating that's coarser
+than RBAC permissions but finer than plans.
+
+#### Data model
+
+```
+product_components
+  (id, product_id, code, name, description,
+   is_default_enabled BOOLEAN,    -- the bulk knob
+   is_active          BOOLEAN,    -- kill switch
+   settings JSONB,
+   created_at, updated_at)
+  UNIQUE (product_id, code)
+  code pattern: ^[a-z][a-z0-9-]{0,63}$   (kebab-case slug)
+
+user_component_overrides
+  (id, product_id, tenant_id, user_id, component_id,
+   is_enabled BOOLEAN, reason, set_by_user_id, set_at,
+   created_at, updated_at)
+  UNIQUE (user_id, component_id)
+```
+
+#### Effective access
+
+For a given (user, component):
+
+1. Look up the override row keyed by (user_id, component_id).
+2. **If present** → `override.is_enabled` wins.
+3. **If absent** → `component.is_default_enabled` is the answer.
+4. Inactive components (`is_active = false`) are uniformly hidden
+   from listings and access checks return False.
+
+Helpers in `app/services/component.py`:
+- `user_effective_components(user)` → `[(component, is_enabled, source, reason)]`
+- `user_has_component_access(user, code) -> bool` for single-call gates.
+
+#### Endpoints
+
+| Action | Endpoint | Auth | Notes |
+| --- | --- | --- | --- |
+| List (admin, incl. inactive) | `GET /admin/products/{slug}/components` | platform admin | |
+| Create | `POST /admin/products/{slug}/components` | platform admin | `code` immutable after create |
+| Update | `PATCH /admin/products/{slug}/components/{code}` | platform admin | name / description / `is_default_enabled` / `is_active` / `settings` |
+| Delete | `DELETE /admin/products/{slug}/components/{code}` | platform admin | Cascades to override rows |
+| List (user view, active only) | `GET /components` | user JWT | `[{code, name, is_enabled, source, description, reason?}]` |
+| List for one user | `GET /users/{user_id}/components` | RBAC `components:read` | Target user must be in same tenant |
+| Set override | `PUT /users/{user_id}/components/{code}` | RBAC `components:override` | Idempotent on (user_id, component_id) |
+| Clear override | `DELETE /users/{user_id}/components/{code}` | RBAC `components:override` | Reverts to default |
+
+Plus a convenience embed in `GET /auth/me`:
+
+```json
+{
+  ...,
+  "components": {"voice-overlay": true, "alpha-feature": false}
+}
+```
+
+#### Permissions
+
+Two RBAC codes (auto-seeded; no extra migration step):
+
+- `components:read` — list components + see per-user effective access.
+  Owner / admin / member all get this.
+- `components:override` — enable / disable for a specific user in the
+  current tenant. Owner / admin only.
+
+#### Audit
+
+Every state change writes one of:
+`component.created`, `component.updated`, `component.deleted`,
+`component.override_created`, `component.override_updated`,
+`component.override_cleared`.
+
+The component's `code` and target `user_id` go into `diff`; component
+`settings` does NOT.
+
+#### Common patterns
+
+```python
+# Product-runtime gate.
+from app.services.component import user_has_component_access
+if not await user_has_component_access(db, user=user, code="voice-overlay"):
+    raise Forbidden("voice-overlay not enabled for this user")
+```
+
+```typescript
+// Client: render conditionally on /me.components — no second round-trip.
+const me = await client.auth.me();
+if (me.components["voice-overlay"]) renderVoiceOverlay();
+```
+
 ---
 
 ## 7. Cross-cutting concerns
@@ -1159,6 +1270,7 @@ curl https://api.example.com/api/v1/env -H "X-Service-Token: pst_…"
 | Any change visible to integrating products (new endpoint, changed shape, new header, new error code) | § 6.1 / 6.2 / 6.3 here | `docs/INTEGRATION.md` (mirror to keep client-facing doc honest) **and** `sdks/typescript/` + `sdks/python/` (add the resource method on both, with tests) |
 | SDK behavior change (auth resolution, header semantics, refresh / idempotency / error envelope) | § 5.6 (Official SDKs) | both `sdks/*/README.md` |
 | Env-vars vault — new endpoint, new audit action, new scope, key-provider change | § 6.4 + § 6.1 endpoint table | `docs/INTEGRATION.md` § 9.3, both `sdks/*/README.md` |
+| Components — new endpoint, new audit action, new permission code, schema change | § 6.5 + § 6.1 endpoint table | `docs/INTEGRATION.md` § 9.4, both `sdks/*/README.md` |
 | Jobs API change | § 6.2 | implementer must keep contract truthful |
 | Storage API change | § 6.3 | implementer must keep contract truthful |
 | Multi-product behavior | § 3.2, § 4.3 | `docs/multi-product.md` |

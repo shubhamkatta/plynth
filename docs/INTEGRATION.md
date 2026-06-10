@@ -582,6 +582,71 @@ for (const [k, v] of Object.entries(env)) {
 
 Spec: `docs/ARCHITECTURE.md` § 6.4.
 
+### 9.4 Components — feature gating per user
+
+Your product can declare **components** — discrete feature modules
+the platform tracks (e.g. `voice-overlay`, `morning-brief`). Default
+is permissive: every user sees every component you declare. A tenant
+admin can disable a specific component for a specific user. Plans
+gate billing; components gate UI / feature availability.
+
+**Read on every page load** — the user's effective component map is
+embedded in `/auth/me`, so a single call gates your UI:
+
+```ts
+const me = await fetch("https://api.example.com/api/v1/auth/me", {
+  headers: { Authorization: `Bearer ${access}`, "X-Product-Slug": "mayva" },
+}).then(r => r.json());
+
+if (me.components["voice-overlay"]) {
+  renderVoiceOverlay();
+}
+```
+
+The full list with reasons (when a user has a tenant-admin override
+that disabled them):
+
+```http
+GET /api/v1/components
+Authorization: Bearer ...
+X-Product-Slug: mayva
+→ 200
+[
+  { "code": "voice-overlay", "name": "Voice Overlay",
+    "is_enabled": true, "source": "default" },
+  { "code": "alpha-feature", "name": "Alpha",
+    "is_enabled": false, "source": "override",
+    "reason": "billing dispute" }
+]
+```
+
+**Admin override surface** (tenant admin with `components:override`):
+
+```http
+PUT /api/v1/users/{user_id}/components/voice-overlay
+Authorization: Bearer ...
+X-Product-Slug: mayva
+{ "is_enabled": false, "reason": "billing dispute" }
+→ 200
+
+DELETE /api/v1/users/{user_id}/components/voice-overlay   # revert to default
+→ 204
+```
+
+**Rules**:
+- Components are declared in the platform (via `POST
+  /admin/products/{slug}/components` with the platform admin token).
+  Your product can't create them. Coordinate with the platform owner
+  on what codes exist.
+- A user must be in the SAME tenant as the calling admin for the
+  override endpoints to find them. Cross-tenant overrides return 404
+  (deliberate — that's an admin-of-admin call you'd need separate
+  scoping for).
+- Inactive components (`is_active=false` server-side) are uniformly
+  hidden from `/me.components` and `/components`. Don't rely on a
+  client-side filter.
+- Source-of-truth for the contract is `docs/ARCHITECTURE.md` § 6.5.
+
 ---
 
 ## 10. Common mistakes to avoid

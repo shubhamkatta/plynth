@@ -1,7 +1,9 @@
 import { MemoryStore, type TokenStore } from "./auth.js";
 import { HttpClient } from "./http.js";
+import { AdminComponentsResource } from "./resources/admin_components.js";
 import { AdminEnvResource } from "./resources/admin_env.js";
 import { AuthResource } from "./resources/auth.js";
+import { ComponentsResource } from "./resources/components.js";
 import { CreditsResource } from "./resources/credits.js";
 import { EnvResource } from "./resources/env.js";
 import { PlansResource } from "./resources/plans.js";
@@ -43,6 +45,10 @@ export class PlynthClient {
   readonly serviceTokens: ServiceTokensResource;
   /** Product runtime: fetch this product's env vars. Uses `X-Service-Token`. */
   readonly env: EnvResource;
+  /** Admin: per-product component catalog CRUD. Uses platform admin token. */
+  readonly adminComponents: AdminComponentsResource;
+  /** User: list components + per-user override management. */
+  readonly components: ComponentsResource;
 
   constructor(opts: PlynthClientOptions) {
     this.tokenStore = opts.tokenStore ?? new MemoryStore();
@@ -66,5 +72,7 @@ export class PlynthClient {
     this.adminEnv = new AdminEnvResource(http);
     this.serviceTokens = new ServiceTokensResource(http);
     this.env = new EnvResource(http);
+    this.adminComponents = new AdminComponentsResource(http);
+    this.components = new ComponentsResource(http);
   }
 }

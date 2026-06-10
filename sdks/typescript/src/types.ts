@@ -77,6 +77,9 @@ export interface MeResponse {
   is_active: boolean;
   is_verified: boolean;
   permissions: string[];
+  /** Map of active component code → access boolean. Empty if the
+   * product hasn't declared any components yet. See § 6.5. */
+  components: Record<string, boolean>;
 }
 
 // --- tenants ---
@@ -372,4 +375,50 @@ export interface ServiceTokenResponse {
 export interface ServiceTokenIssued extends ServiceTokenResponse {
   /** The raw `pst_…` token. Returned ONLY at creation; never echoed by list/get. */
   token: string;
+}
+
+// --- components (per-product feature modules) ---
+
+export interface ComponentCreateRequest {
+  code: string;
+  name: string;
+  description?: string;
+  is_default_enabled?: boolean;
+  is_active?: boolean;
+  settings?: Record<string, unknown>;
+}
+
+export interface ComponentUpdateRequest {
+  name?: string;
+  description?: string;
+  is_default_enabled?: boolean;
+  is_active?: boolean;
+  settings?: Record<string, unknown>;
+}
+
+export interface ComponentResponse {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  is_default_enabled: boolean;
+  is_active: boolean;
+  settings: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserComponentOverrideRequest {
+  is_enabled: boolean;
+  reason?: string;
+}
+
+export interface UserComponentStatus {
+  code: string;
+  name: string;
+  is_enabled: boolean;
+  /** `"default"` = inherits `is_default_enabled`; `"override"` = explicit per-user row. */
+  source: string;
+  description?: string | null;
+  reason?: string | null;
 }

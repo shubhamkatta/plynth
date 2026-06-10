@@ -1078,6 +1078,28 @@ The plaintext **never** appears in `audit_log.diff`. Reveal diffs include `reaso
 | Cross-product theft | Service token → product mapping is server-side. `X-Product-Slug` mismatch → 403. `aad_for(product_id, key)` rejects ciphertext substitution. |
 | Admin abuse (curious operator) | Reveal requires explicit `reason`, writes high-severity audit. List responses redact to first/last 4 chars only. |
 
+#### Server-only key filter
+
+Some env vault keys are used by the platform on the product's behalf
+and must never reach a client. They stay in the vault — admin can
+read / rotate / reveal them — but are filtered out of the
+product-runtime `GET /api/v1/env` response.
+
+Pattern list lives in `app/services/env_var.py`:
+
+```python
+SERVER_ONLY_KEY_PATTERNS = (
+    re.compile(r"^GOOGLE_(.*_)?CLIENT_SECRET$"),   # used by § 6.6
+)
+```
+
+The admin list response includes `is_server_only: bool` per row so
+operators see at a glance which keys are filtered.
+
+To extend (e.g. when a new platform-mediated integration lands):
+add the pattern, ship, no migration needed. Existing vault rows
+become server-only on the next list / runtime fetch.
+
 #### Operator playbook
 
 ```bash

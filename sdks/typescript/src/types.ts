@@ -340,6 +340,13 @@ export interface EnvVarListItem {
   preview?: string | null;
   /** Set for `is_secret: false` rows only — full plaintext. */
   value?: string | null;
+  /**
+   * True when the key matches the platform's server-only pattern
+   * (e.g. `GOOGLE_*_CLIENT_SECRET`). The value stays in the vault for
+   * platform-internal use (e.g. the Google OAuth exchange endpoint)
+   * but is filtered out of the runtime `GET /env` response.
+   */
+  is_server_only?: boolean;
 }
 
 export interface EnvVarDetail {

@@ -141,6 +141,94 @@ async def test_extra_fields_rejected(client: AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------
+# Server-only key filter (GOOGLE_*_CLIENT_SECRET → hidden from /env)
+# ---------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_server_only_key_excluded_from_runtime_env(client: AsyncClient) -> None:
+    """Step 2 of the OAuth-exchange cutover: GOOGLE_CLIENT_SECRET stays in
+    the vault for the platform's use, but `/env` does NOT return it."""
+    await client.put(
+        f"{ADMIN_ENV}/GOOGLE_CLIENT_ID",
+        json={"value": "PLYNTH_TEST_CID_xyz", "is_secret": True},
+        headers=platform_admin_headers(),
+    )
+    await client.put(
+        f"{ADMIN_ENV}/GOOGLE_CLIENT_SECRET",
+        json={"value": "PLYNTH_TEST_SECRET_NOT_REAL_xyz", "is_secret": True},
+        headers=platform_admin_headers(),
+    )
+    issued = (await client.post(
+        ADMIN_TOKENS, json={"name": "x"}, headers=platform_admin_headers(),
+    )).json()
+    r = await client.get(
+        "/api/v1/env", headers={"X-Service-Token": issued["token"]},
+    )
+    assert r.status_code == 200
+    env = r.json()
+    assert "GOOGLE_CLIENT_ID" in env  # public id stays
+    assert "GOOGLE_CLIENT_SECRET" not in env  # server-only filtered
+
+
+@pytest.mark.asyncio
+async def test_gmail_client_secret_also_server_only(client: AsyncClient) -> None:
+    """The pattern matches any GOOGLE_<group>_CLIENT_SECRET, not just the bare one."""
+    await client.put(
+        f"{ADMIN_ENV}/GOOGLE_GMAIL_CLIENT_ID",
+        json={"value": "PLYNTH_TEST_GMAIL_CID_xyz", "is_secret": True},
+        headers=platform_admin_headers(),
+    )
+    await client.put(
+        f"{ADMIN_ENV}/GOOGLE_GMAIL_CLIENT_SECRET",
+        json={"value": "PLYNTH_TEST_GMAIL_SECRET_xyz", "is_secret": True},
+        headers=platform_admin_headers(),
+    )
+    issued = (await client.post(
+        ADMIN_TOKENS, json={"name": "x"}, headers=platform_admin_headers(),
+    )).json()
+    env = (await client.get(
+        "/api/v1/env", headers={"X-Service-Token": issued["token"]},
+    )).json()
+    assert "GOOGLE_GMAIL_CLIENT_ID" in env
+    assert "GOOGLE_GMAIL_CLIENT_SECRET" not in env
+
+
+@pytest.mark.asyncio
+async def test_admin_list_marks_server_only_keys(client: AsyncClient) -> None:
+    """Operators need to see at a glance which keys are server-only."""
+    await client.put(
+        f"{ADMIN_ENV}/GOOGLE_CLIENT_SECRET",
+        json={"value": "PLYNTH_TEST_NOT_REAL", "is_secret": True},
+        headers=platform_admin_headers(),
+    )
+    await client.put(
+        f"{ADMIN_ENV}/REGULAR_API_KEY",
+        json={"value": "regular_key", "is_secret": True},
+        headers=platform_admin_headers(),
+    )
+    listing = (await client.get(ADMIN_ENV, headers=platform_admin_headers())).json()
+    rows = {row["key"]: row for row in listing}
+    assert rows["GOOGLE_CLIENT_SECRET"]["is_server_only"] is True
+    assert rows["REGULAR_API_KEY"]["is_server_only"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_can_still_reveal_server_only_key(client: AsyncClient) -> None:
+    """Server-only filter is /env-only — admin reveal path still works."""
+    await client.put(
+        f"{ADMIN_ENV}/GOOGLE_CLIENT_SECRET",
+        json={"value": "PLYNTH_TEST_REVEAL_xyz", "is_secret": True},
+        headers=platform_admin_headers(),
+    )
+    r = await client.get(
+        f"{ADMIN_ENV}/GOOGLE_CLIENT_SECRET?reveal=true&reason=rotation%20test",
+        headers=platform_admin_headers(),
+    )
+    assert r.status_code == 200
+    assert r.json()["value"] == "PLYNTH_TEST_REVEAL_xyz"
+
+
+# ---------------------------------------------------------------------
 # Service tokens + product fetch
 # ---------------------------------------------------------------------
 

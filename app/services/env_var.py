@@ -11,6 +11,7 @@ high-severity and carry the operator-supplied reason in ``diff.reason``.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -22,6 +23,25 @@ from app.core.exceptions import NotFound
 from app.core.tenant import bypass_product, bypass_tenant
 from app.models.env_var import ProductEnvVar
 from app.services import audit
+
+# Keys matching these patterns remain in the vault — admin can read /
+# rotate / reveal them — but are filtered out of the product-runtime
+# ``GET /api/v1/env`` response. They're "server-only" credentials that
+# the platform uses on the product's behalf without ever returning to
+# the client. Today: Google OAuth client secrets used by the
+# ``/integrations/google/exchange`` endpoint (see ARCHITECTURE.md § 6.6).
+#
+# Extend this list as more platform-mediated integrations land. Operators
+# get visibility via ``is_server_only`` in the admin list response.
+SERVER_ONLY_KEY_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^GOOGLE_(.*_)?CLIENT_SECRET$"),
+)
+
+
+def is_server_only(key: str) -> bool:
+    """True if ``key`` should be hidden from the product-runtime /env
+    response (still admin-readable)."""
+    return any(p.match(key) for p in SERVER_ONLY_KEY_PATTERNS)
 
 
 async def set_var(

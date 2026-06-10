@@ -570,6 +570,13 @@ for (const [k, v] of Object.entries(env)) {
   the same. Your next boot picks up the new value. If you need a
   long-running process to refresh without restart, schedule a
   background refetch on a long interval (e.g. every 6 hours).
+- **Some keys are server-only and won't appear here.** Keys matching
+  the platform's server-only pattern — today: `GOOGLE_*_CLIENT_SECRET`
+  — are kept in the vault for the platform's use (see § 9.5) but
+  filtered out of `/env`. If your code historically read
+  `GOOGLE_CLIENT_SECRET` from this response, route the OAuth exchange
+  through § 9.5 instead. The public `GOOGLE_*_CLIENT_ID` keys remain
+  in the response because clients still need them for the consent URL.
 
 **What you can trust the platform to do for you:**
 

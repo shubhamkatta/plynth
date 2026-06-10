@@ -44,4 +44,12 @@ async def get_product_env(
     consumer side.
     """
     rows = await env_svc.list_vars(db, product_id=token.product_id)
-    return {r.key: env_svc.reveal(r) for r in rows}
+    # Server-only keys (e.g. GOOGLE_*_CLIENT_SECRET) are kept in the
+    # vault for the platform's use but filtered from this response —
+    # see app.services.env_var.SERVER_ONLY_KEY_PATTERNS and
+    # ARCHITECTURE.md § 6.4 / § 6.6.
+    return {
+        r.key: env_svc.reveal(r)
+        for r in rows
+        if not env_svc.is_server_only(r.key)
+    }

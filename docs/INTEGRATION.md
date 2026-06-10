@@ -647,6 +647,118 @@ DELETE /api/v1/users/{user_id}/components/voice-overlay   # revert to default
   client-side filter.
 - Source-of-truth for the contract is `docs/ARCHITECTURE.md` § 6.5.
 
+### 9.5 Server-side Google OAuth exchange
+
+`POST /api/v1/integrations/google/exchange`
+
+Use this endpoint instead of swapping `code` (or `refresh_token`)
+with Google directly. The platform holds the `client_secret` in the
+per-product env vault — your client never receives it and a leaked
+DMG can't extract it.
+
+#### Auth (same product-level convention as `GET /api/v1/env`)
+
+| Header | Required | Notes |
+| --- | --- | --- |
+| `X-Service-Token: pst_…` | yes | Must carry the `google:exchange` scope. 401 if missing/invalid, 403 if wrong scope. |
+| `X-Product-Slug: <slug>` | recommended | Defence-in-depth: must match the token's product or 403. |
+| `Idempotency-Key: <uuid>` | yes | Sent on every call; platform convention. |
+| `Content-Type: application/json` | yes | |
+
+#### Request — two grant shapes, discriminated by `grant_type`
+
+```json
+{
+  "grant_type": "authorization_code",
+  "client_id": "<google oauth client id>",
+  "code": "<one-time auth code>",
+  "code_verifier": "<43-128 char PKCE verifier, S256>",
+  "redirect_uri": "http://localhost:55001/oauth/callback"
+}
+```
+
+```json
+{
+  "grant_type": "refresh_token",
+  "client_id": "<google oauth client id>",
+  "refresh_token": "<stored refresh token>"
+}
+```
+
+#### Secret lookup convention
+
+The platform's env vault may hold multiple Google OAuth client pairs
+keyed by a `GOOGLE_*CLIENT_ID` / `GOOGLE_*CLIENT_SECRET` naming
+convention. The endpoint:
+
+1. Enumerates the product's `GOOGLE_*_CLIENT_ID` env vars.
+2. Decrypts each and matches against the request's `client_id`.
+3. Reads the matching `GOOGLE_*_CLIENT_SECRET` and uses it for the swap.
+
+Examples for mayva:
+```
+GOOGLE_CLIENT_ID         ↔ GOOGLE_CLIENT_SECRET
+GOOGLE_GMAIL_CLIENT_ID   ↔ GOOGLE_GMAIL_CLIENT_SECRET
+```
+
+Unknown `client_id` for the calling product → `422 validation_failed`.
+
+#### Success response (200) — passes through Google's body verbatim
+
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",   // only on first code-exchange, usually absent on refresh
+  "expires_in": 3599,
+  "scope": "openid email profile",
+  "token_type": "Bearer"
+}
+```
+
+Don't synthesize `refresh_token` if Google omits it. The platform
+does NOT persist any returned tokens — custody stays on the user's
+device (OS keychain / local DB).
+
+#### Error envelope
+
+| Condition | Status | `code` | `message` includes |
+| --- | --- | --- | --- |
+| Missing / invalid `X-Service-Token` | 401 | `unauthorized` | |
+| Service token lacks `google:exchange` scope | 403 | `forbidden` | required scope |
+| `X-Product-Slug` doesn't match token's product | 403 | `forbidden` | |
+| Malformed body (e.g. missing `code_verifier`) | 422 | `validation_failed` | Pydantic field errors |
+| `client_id` doesn't match any vault entry | 422 | `validation_failed` | last 16 chars of `client_id` |
+| Google returns 4xx (e.g. `invalid_grant`) | 401 | `unauthorized` | `google: <error>` |
+| Google returns 5xx / unreachable | 503 | `service_unavailable` | |
+| Rate limit | 429 | `rate_limited` | `Retry-After` header set |
+
+#### Logging
+
+The platform logs `product / client_id_tail / grant_type / outcome /
+google_status` only. **Never** the `code`, `code_verifier`, the
+`refresh_token`, the `access_token`, or the client_secret.
+
+#### Two-step cutover sequence (for the platform operator)
+
+1. **First**: deploy the endpoint above. Verify with mayva traffic in
+   production. While `GOOGLE_CLIENT_SECRET` is still in the vault's
+   `/env` response, mayva continues to exchange directly with Google
+   (no change in behaviour today).
+2. **Second**: as a separate operation, remove `GOOGLE_CLIENT_SECRET`
+   (and `GOOGLE_GMAIL_CLIENT_SECRET` if present) from the mayva
+   product's vault — or better, mark them so `/env` filters them out
+   while admins can still read+rotate them. `GOOGLE_CLIENT_ID` (and
+   the Gmail-specific id override) MUST remain — clients need the
+   public id for the consent URL.
+
+   On next boot, mayva clients detect the absent secret and route all
+   exchanges through this endpoint.
+
+This is a reversible vault/config operation, not a code change —
+revert by re-PUT-ing the secrets if any error spike appears.
+
+Spec: `docs/ARCHITECTURE.md` § 6.6.
+
 ---
 
 ## 10. Common mistakes to avoid

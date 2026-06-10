@@ -8,6 +8,7 @@ from app.api.v1 import (
     credits,
     env,
     env_admin,
+    integrations,
     jobs,
     plans,
     roles,
@@ -53,3 +54,5 @@ api_router.include_router(
 api_router.include_router(components.router, prefix="/components", tags=["components"])
 # User-component override endpoints hang off /users/{user_id}/components/*.
 api_router.include_router(components.users_router, prefix="/users", tags=["components"])
+# Integrations: server-side OAuth code/refresh exchange. X-Service-Token auth.
+api_router.include_router(integrations.router, prefix="/integrations", tags=["integrations"])

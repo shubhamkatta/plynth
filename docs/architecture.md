@@ -731,6 +731,7 @@ Grouped by typical Electron use case. Full bodies + headers in
 | Enable / disable a component for a user | `PUT /api/v1/users/{user_id}/components/{code}` | Permission: `components:override` |
 | Clear a per-user override (revert to default) | `DELETE /api/v1/users/{user_id}/components/{code}` | Permission: `components:override` |
 | Create / update / delete a component (admin) | `POST/PATCH/DELETE /api/v1/admin/products/{slug}/components/...` | Platform-admin token |
+| Server-side Google OAuth exchange | `POST /api/v1/integrations/google/exchange` | `X-Service-Token` with `google:exchange` scope; see § 6.6 |
 
 ### 6.2 Jobs API (designed — not implemented)
 
@@ -1212,6 +1213,96 @@ const me = await client.auth.me();
 if (me.components["voice-overlay"]) renderVoiceOverlay();
 ```
 
+### 6.6 Integrations: Google OAuth exchange (implemented)
+
+> Source-of-truth contract for the platform-mediated OAuth token swap.
+> Implemented in `app/services/google_oauth.py` +
+> `app/api/v1/integrations.py`. No schema migration — reuses
+> `product_env_vars` for the client_secret lookup.
+
+#### Purpose
+
+Eliminate `client_secret` leakage through shipped desktop products.
+Clients send the PKCE-protected `code` (or stored `refresh_token`)
+plus the public `client_id` to the platform; the platform finds the
+matching secret in the product's env vault, swaps with Google, and
+returns Google's response verbatim. Tokens are never persisted by
+the platform.
+
+Endpoint: `POST /api/v1/integrations/google/exchange`. Auth:
+`X-Service-Token` with the new `google:exchange` scope.
+
+#### Secret lookup convention
+
+The env vault may hold multiple Google OAuth client pairs under the
+naming convention:
+
+```
+GOOGLE_<group>_CLIENT_ID         ↔ GOOGLE_<group>_CLIENT_SECRET
+```
+
+Default (omit `<group>`) is `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+A second client for a different scope tier (e.g. Gmail access on a
+restricted client) uses `GOOGLE_GMAIL_CLIENT_ID` /
+`GOOGLE_GMAIL_CLIENT_SECRET`.
+
+The service iterates the product's `GOOGLE_*_CLIENT_ID` vault rows,
+decrypts each, and matches the request's `client_id` against the
+plaintext value. The matching row's key with `_CLIENT_ID` replaced
+by `_CLIENT_SECRET` is the secret used for the swap. Unknown
+`client_id` → `422 validation_failed`.
+
+This iteration is intentional rather than encoding `client_id` into
+the env key name — keeps operator-facing keys short and human-readable.
+
+#### Request / response shape
+
+See `app/schemas/integrations.py`. Two grant types
+(`authorization_code`, `refresh_token`) discriminated by Pydantic.
+`code_verifier` is required (43-128 chars) on `authorization_code` —
+PKCE is mandatory. Response is a verbatim pass-through of Google's
+token body (`refresh_token` absent on most refresh-grant responses;
+do not synthesize).
+
+#### Error mapping
+
+| Failure | Platform envelope |
+| --- | --- |
+| Missing / invalid service token | `401 unauthorized` |
+| Token lacks `google:exchange` scope | `403 forbidden` |
+| `X-Product-Slug` mismatches token's product | `403 forbidden` |
+| Pydantic body validation (`code_verifier` missing etc.) | `422 validation_failed` |
+| Unknown `client_id` for this product | `422 validation_failed` |
+| Google 4xx (e.g. `invalid_grant` on revoked refresh) | `401 unauthorized`; `message = "google: <error>"`, `details.google_error` |
+| Google 5xx / network failure | `503 service_unavailable` |
+
+#### Privacy & logging
+
+- The platform NEVER persists `code`, `code_verifier`,
+  `refresh_token`, `access_token`, or the resolved `client_secret`.
+- Logs include `product_id`, `client_id_tail` (last 16 chars),
+  `grant_type`, outcome, and `google_status` only.
+
+#### Scope addition
+
+`google:exchange` is a new entry in
+`app/schemas/service_token.py:ALLOWED_SCOPES`. Existing tokens that
+only carry `env:read` must be re-issued (or have their `scopes`
+JSONB field updated) to call this endpoint.
+
+#### Two-step cutover for an existing product
+
+1. Deploy this endpoint. While `GOOGLE_CLIENT_SECRET` is still in the
+   product's `/env` response, clients keep exchanging directly with
+   Google (no behaviour change).
+2. As a reversible vault operation, remove the `*_CLIENT_SECRET` rows
+   from the product's vault (or mark them so `/env` filters them
+   out). Clients fall back to this endpoint on next boot. Revert by
+   re-PUT-ing the secret if any error spike appears.
+
+`GOOGLE_*_CLIENT_ID` rows MUST remain — clients need the public id
+for the consent URL.
+
 ---
 
 ## 7. Cross-cutting concerns
@@ -1271,6 +1362,7 @@ if (me.components["voice-overlay"]) renderVoiceOverlay();
 | SDK behavior change (auth resolution, header semantics, refresh / idempotency / error envelope) | § 5.6 (Official SDKs) | both `sdks/*/README.md` |
 | Env-vars vault — new endpoint, new audit action, new scope, key-provider change | § 6.4 + § 6.1 endpoint table | `docs/INTEGRATION.md` § 9.3, both `sdks/*/README.md` |
 | Components — new endpoint, new audit action, new permission code, schema change | § 6.5 + § 6.1 endpoint table | `docs/INTEGRATION.md` § 9.4, both `sdks/*/README.md` |
+| Integrations / Google OAuth exchange — new endpoint, new scope, new error mapping | § 6.6 + § 6.1 endpoint table | `docs/INTEGRATION.md` § 9.5 |
 | Jobs API change | § 6.2 | implementer must keep contract truthful |
 | Storage API change | § 6.3 | implementer must keep contract truthful |
 | Multi-product behavior | § 3.2, § 4.3 | `docs/multi-product.md` |

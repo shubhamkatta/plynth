@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.core.dependencies import CurrentUser, require_permission
 from app.core.exceptions import NotFound
 from app.core.tenant import bypass_product, bypass_tenant
+from app.models.component import ProductComponent
 from app.models.user import User
 from app.schemas.component import (
     UserComponentOverrideSet,
@@ -33,6 +34,19 @@ users_router = APIRouter()
 _CODE_RE = r"^[a-z][a-z0-9-]{0,63}$"
 
 
+def _to_status(
+    c: ProductComponent, is_enabled: bool, source: str, reason: str | None,
+) -> UserComponentStatus:
+    """Shape a (component, decision) tuple into the response schema,
+    including ``required_plan_codes`` when the gate is the reason for
+    the answer so clients can render upgrade prompts."""
+    return UserComponentStatus(
+        code=c.code, name=c.name, is_enabled=is_enabled,
+        source=source, description=c.description, reason=reason,
+        required_plan_codes=(c.required_plan_codes if source == "plan" else None),
+    )
+
+
 @router.get("", response_model=list[UserComponentStatus],
             summary="List active components in the current product with my access")
 async def list_my_components(
@@ -40,13 +54,7 @@ async def list_my_components(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[UserComponentStatus]:
     rows = await component_svc.user_effective_components(db, user=user)
-    return [
-        UserComponentStatus(
-            code=c.code, name=c.name, is_enabled=is_enabled,
-            source=source, description=c.description, reason=reason,
-        )
-        for (c, is_enabled, source, reason) in rows
-    ]
+    return [_to_status(c, e, s, r) for (c, e, s, r) in rows]
 
 
 # --- user override management (tenant admin) -------------------------
@@ -79,13 +87,7 @@ async def list_user_components(
         db, user_id=user_id, product_id=actor.product_id, tenant_id=actor.tenant_id,
     )
     rows = await component_svc.user_effective_components(db, user=target)
-    return [
-        UserComponentStatus(
-            code=c.code, name=c.name, is_enabled=is_enabled,
-            source=source, description=c.description, reason=reason,
-        )
-        for (c, is_enabled, source, reason) in rows
-    ]
+    return [_to_status(c, e, s, r) for (c, e, s, r) in rows]
 
 
 @users_router.put(

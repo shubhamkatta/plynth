@@ -1151,9 +1151,11 @@ than RBAC permissions but finer than plans.
 ```
 product_components
   (id, product_id, code, name, description,
-   is_default_enabled BOOLEAN,    -- the bulk knob
-   is_active          BOOLEAN,    -- kill switch
-   settings JSONB,
+   is_default_enabled  BOOLEAN,         -- the bulk knob
+   is_active           BOOLEAN,         -- kill switch
+   settings            JSONB,
+   required_plan_codes JSONB (list)     -- NULL = no plan restriction
+                                        -- list = "Pro+" tier gate
    created_at, updated_at)
   UNIQUE (product_id, code)
   code pattern: ^[a-z][a-z0-9-]{0,63}$   (kebab-case slug)
@@ -1171,9 +1173,21 @@ For a given (user, component):
 
 1. Look up the override row keyed by (user_id, component_id).
 2. **If present** → `override.is_enabled` wins.
-3. **If absent** → `component.is_default_enabled` is the answer.
-4. Inactive components (`is_active = false`) are uniformly hidden
+3. **If absent AND `required_plan_codes` is set:**
+   - Look up the tenant's active subscription's plan `code`.
+   - If the plan code is in `required_plan_codes` → fall through to
+     `component.is_default_enabled` (source = `default`).
+   - Else → `False`, source = `plan`. The response includes the
+     `required_plan_codes` hint so clients can render upgrade prompts.
+4. **If absent AND no plan gate** → `component.is_default_enabled`
+   (source = `default`).
+5. Inactive components (`is_active = false`) are uniformly hidden
    from listings and access checks return False.
+
+"Active subscription" = `Subscription.has_access` is True (TRIAL,
+ACTIVE, PAST_DUE, GRACE all count). Suspended / cancelled / expired
+tenants are blocked from plan-gated components but keep plain
+default-enabled ones.
 
 Helpers in `app/services/component.py`:
 - `user_effective_components(user)` → `[(component, is_enabled, source, reason)]`

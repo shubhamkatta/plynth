@@ -94,6 +94,134 @@ async def test_admin_delete(client: AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------
+# Plan-driven gating (required_plan_codes)
+# ---------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_with_required_plan_codes(client: AsyncClient) -> None:
+    r = await client.post(
+        ADMIN_BASE,
+        json={"code": "pro-only", "name": "Pro Only",
+              "required_plan_codes": ["pro", "enterprise"]},
+        headers=platform_admin_headers(),
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["required_plan_codes"] == ["pro", "enterprise"]
+
+
+@pytest.mark.asyncio
+async def test_free_user_blocked_from_paid_component(client: AsyncClient) -> None:
+    """User on the seeded Free plan does NOT see a `pro`-gated component as enabled."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro", "enterprise"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    assert by_code["voice-overlay"]["is_enabled"] is False
+    assert by_code["voice-overlay"]["source"] == "plan"
+    assert by_code["voice-overlay"]["required_plan_codes"] == ["pro", "enterprise"]
+
+
+@pytest.mark.asyncio
+async def test_pro_user_gets_paid_component(client: AsyncClient) -> None:
+    """After upgrading to pro, the user sees the same component as enabled."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro", "enterprise"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    # Purchase the pro plan to flip the tenant's subscription.
+    purchase = await client.post(
+        "/api/v1/subscription/purchase", json={"plan_code": "pro"},
+        headers=auth(tok["access_token"]),
+    )
+    assert purchase.status_code == 200, purchase.text
+
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    assert by_code["voice-overlay"]["is_enabled"] is True
+    assert by_code["voice-overlay"]["source"] == "default"
+    # On the qualifying path, the required_plan_codes hint isn't returned —
+    # the client doesn't need it because the gate didn't fire.
+    assert by_code["voice-overlay"]["required_plan_codes"] is None
+
+
+@pytest.mark.asyncio
+async def test_per_user_override_beats_plan_gate(client: AsyncClient) -> None:
+    """A grant-by-override lets a free user access a pro-only component."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    me = (await client.get("/api/v1/auth/me", headers=auth(tok["access_token"]))).json()
+    # Owner has *:*, so can self-override.
+    grant = await client.put(
+        f"/api/v1/users/{me['id']}/components/voice-overlay",
+        json={"is_enabled": True, "reason": "beta access"},
+        headers=auth(tok["access_token"]),
+    )
+    assert grant.status_code == 200, grant.text
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    assert by_code["voice-overlay"]["is_enabled"] is True
+    assert by_code["voice-overlay"]["source"] == "override"
+
+
+@pytest.mark.asyncio
+async def test_per_user_override_can_disable_qualifying_plan_user(client: AsyncClient) -> None:
+    """A disable-by-override revokes a pro user from a pro-only component."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    await client.post(
+        "/api/v1/subscription/purchase", json={"plan_code": "pro"},
+        headers=auth(tok["access_token"]),
+    )
+    me = (await client.get("/api/v1/auth/me", headers=auth(tok["access_token"]))).json()
+    await client.put(
+        f"/api/v1/users/{me['id']}/components/voice-overlay",
+        json={"is_enabled": False, "reason": "billing dispute"},
+        headers=auth(tok["access_token"]),
+    )
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    assert by_code["voice-overlay"]["is_enabled"] is False
+    assert by_code["voice-overlay"]["source"] == "override"
+
+
+@pytest.mark.asyncio
+async def test_me_components_reflects_plan_gate(client: AsyncClient) -> None:
+    """The /me embed should mirror the plan gating in a single map."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "everyone", "name": "Everyone"},
+        headers=platform_admin_headers(),
+    )
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "pro-only", "name": "Pro Only",
+              "required_plan_codes": ["pro", "enterprise"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    me = (await client.get("/api/v1/auth/me", headers=auth(tok["access_token"]))).json()
+    assert me["components"] == {"everyone": True, "pro-only": False}
+
+
+# ---------------------------------------------------------------------
 # User-facing default access
 # ---------------------------------------------------------------------
 

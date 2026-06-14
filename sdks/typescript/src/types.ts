@@ -393,6 +393,12 @@ export interface ComponentCreateRequest {
   is_default_enabled?: boolean;
   is_active?: boolean;
   settings?: Record<string, unknown>;
+  /**
+   * Plan codes whose subscribers receive this component. `null` (default)
+   * = no plan restriction. A non-empty list means tenants on any other
+   * plan get `is_enabled: false` (modulo per-user overrides).
+   */
+  required_plan_codes?: string[] | null;
 }
 
 export interface ComponentUpdateRequest {
@@ -401,6 +407,7 @@ export interface ComponentUpdateRequest {
   is_default_enabled?: boolean;
   is_active?: boolean;
   settings?: Record<string, unknown>;
+  required_plan_codes?: string[] | null;
 }
 
 export interface ComponentResponse {
@@ -411,6 +418,7 @@ export interface ComponentResponse {
   is_default_enabled: boolean;
   is_active: boolean;
   settings: Record<string, unknown>;
+  required_plan_codes: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -424,8 +432,14 @@ export interface UserComponentStatus {
   code: string;
   name: string;
   is_enabled: boolean;
-  /** `"default"` = inherits `is_default_enabled`; `"override"` = explicit per-user row. */
+  /**
+   * `"default"`  → fell back to `is_default_enabled` (no plan gate, or gate satisfied)
+   * `"plan"`     → component is plan-gated and the tenant's plan doesn't qualify
+   * `"override"` → explicit per-user override row decided
+   */
   source: string;
   description?: string | null;
   reason?: string | null;
+  /** Set when `source === "plan"`: the codes the tenant would need to be on. */
+  required_plan_codes?: string[] | null;
 }

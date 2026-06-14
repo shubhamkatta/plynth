@@ -292,6 +292,17 @@ MIGRATIONS: list[tuple[str, str]] = [
           ON user_component_overrides (user_id, component_id)
         """,
     ),
+    # Plan-driven gating for components. NULL = no plan restriction.
+    # A non-empty JSONB list of plan codes means "only tenants on one of
+    # these plans get this component" (subject to per-user override).
+    # See ARCHITECTURE.md § 6.5.
+    (
+        "0010_components_required_plan_codes",
+        """
+        ALTER TABLE product_components
+          ADD COLUMN IF NOT EXISTS required_plan_codes JSONB
+        """,
+    ),
 ]
 
 

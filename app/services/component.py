@@ -38,6 +38,7 @@ async def create_component(
     is_default_enabled: bool = True,
     is_active: bool = True,
     settings: dict[str, Any] | None = None,
+    required_plan_codes: list[str] | None = None,
     actor_user_id: UUID | None = None,
 ) -> ProductComponent:
     """Idempotent on (product_id, code). Raises Conflict on duplicate."""
@@ -58,6 +59,7 @@ async def create_component(
             is_default_enabled=is_default_enabled,
             is_active=is_active,
             settings=settings or {},
+            required_plan_codes=required_plan_codes or None,
         )
         db.add(row)
         await db.flush()
@@ -72,6 +74,7 @@ async def create_component(
                 "code": code,
                 "is_default_enabled": is_default_enabled,
                 "is_active": is_active,
+                "required_plan_codes": required_plan_codes,
             },
         )
     return row
@@ -249,13 +252,71 @@ async def clear_user_override(
 # Effective access
 # ---------------------------------------------------------------------
 
+async def _tenant_active_plan_code(
+    db: AsyncSession, *, tenant_id: UUID, product_id: UUID,
+) -> str | None:
+    """Return the plan code of the tenant's active subscription, or None
+    when the tenant has no subscription with access (suspended /
+    cancelled / expired all count as None).
+
+    Used to evaluate `required_plan_codes` gating. A `None` result means
+    the tenant gets no plan-gated components — the bare defaults still
+    apply.
+    """
+    # Local imports avoid a circular: component → subscription → component
+    from app.models.plan import Plan
+    from app.models.subscription import Subscription
+
+    with bypass_product(), bypass_tenant():
+        result = (
+            await db.execute(
+                select(Subscription, Plan.code)
+                .join(Plan, Plan.id == Subscription.plan_id)
+                .where(
+                    Subscription.tenant_id == tenant_id,
+                    Subscription.product_id == product_id,
+                )
+            )
+        ).first()
+    if result is None:
+        return None
+    sub, plan_code = result
+    return plan_code if sub.has_access else None
+
+
+def _resolve_with_plan(
+    component: ProductComponent,
+    *,
+    tenant_plan_code: str | None,
+) -> tuple[bool, str]:
+    """Apply `required_plan_codes` gating. Returns (is_enabled, source).
+
+    No override is consulted here — callers handle that. Falls through
+    to (is_default_enabled, "default") when the component has no plan
+    gate or the tenant qualifies.
+    """
+    required = component.required_plan_codes
+    if not required:
+        return component.is_default_enabled, "default"
+    if tenant_plan_code is not None and tenant_plan_code in required:
+        return component.is_default_enabled, "default"
+    return False, "plan"
+
+
 async def user_effective_components(
     db: AsyncSession, *, user: User
 ) -> list[tuple[ProductComponent, bool, str, str | None]]:
     """Return [(component, is_enabled, source, reason), ...] for every
-    ACTIVE component in the user's product. ``source`` is "default"
-    or "override". Inactive components are omitted entirely (the user
-    can't reach them either way)."""
+    ACTIVE component in the user's product.
+
+    ``source`` is one of:
+    - ``"override"`` — a per-user override row decided
+    - ``"plan"``     — component is plan-gated and the user's tenant
+                       isn't on one of the qualifying plans
+    - ``"default"``  — fell back to the component's ``is_default_enabled``
+
+    Inactive components are omitted entirely (the user can't reach them
+    either way)."""
     with bypass_product(), bypass_tenant():
         components = (
             await db.scalars(
@@ -282,13 +343,18 @@ async def user_effective_components(
                 )
             ).all()
         }
+    # Fetch tenant's plan ONCE per call. None if no qualifying subscription.
+    tenant_plan_code = await _tenant_active_plan_code(
+        db, tenant_id=user.tenant_id, product_id=user.product_id,
+    )
     out: list[tuple[ProductComponent, bool, str, str | None]] = []
     for c in components:
         ov = overrides.get(c.id)
         if ov is not None:
             out.append((c, ov.is_enabled, "override", ov.reason))
         else:
-            out.append((c, c.is_default_enabled, "default", None))
+            is_enabled, source = _resolve_with_plan(c, tenant_plan_code=tenant_plan_code)
+            out.append((c, is_enabled, source, None))
     return out
 
 
@@ -297,7 +363,11 @@ async def user_has_component_access(
 ) -> bool:
     """Single-call access gate. Returns False if component is inactive
     or doesn't exist (so callers don't accidentally grant access to a
-    deleted module)."""
+    deleted module).
+
+    Honours plan gating: if the component declares ``required_plan_codes``
+    and the user's tenant is not on a qualifying plan, returns False
+    (unless a per-user override grants access)."""
     with bypass_product(), bypass_tenant():
         component = await db.scalar(
             select(ProductComponent).where(
@@ -315,4 +385,8 @@ async def user_has_component_access(
         )
     if ov is not None:
         return ov.is_enabled
-    return component.is_default_enabled
+    tenant_plan_code = await _tenant_active_plan_code(
+        db, tenant_id=user.tenant_id, product_id=user.product_id,
+    )
+    is_enabled, _ = _resolve_with_plan(component, tenant_plan_code=tenant_plan_code)
+    return is_enabled

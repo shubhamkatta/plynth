@@ -59,6 +59,20 @@ class ProductComponent(UUIDPKMixin, TimestampMixin, ProductScopedMixin, Base):
     # rate limits). Returned verbatim by GET /components.
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
+    # Plan-driven access gate.
+    #
+    # - NULL → no plan restriction. Default-permissive: every user gets
+    #   the component (modulo overrides).
+    # - non-empty list → tenant's active subscription's plan_code must
+    #   be one of these to inherit ``is_default_enabled``. Tenants on
+    #   any other plan get is_enabled=False (source="plan").
+    #
+    # Per-user overrides still win, so admins can grandfather a single
+    # user or grant beta access without changing their plan.
+    required_plan_codes: Mapped[list[str] | None] = mapped_column(
+        JSONB, nullable=True, default=None,
+    )
+
 
 class UserComponentOverride(
     UUIDPKMixin, TimestampMixin, ProductScopedMixin, TenantScopedMixin, Base

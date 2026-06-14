@@ -384,6 +384,9 @@ class ComponentCreateRequest(TypedDict, total=False):
     is_default_enabled: bool
     is_active: bool
     settings: dict[str, Any]
+    # Plan codes whose subscribers receive this component. None = no
+    # plan restriction. Non-empty list → other plans get is_enabled=False.
+    required_plan_codes: list[str] | None
 
 
 class ComponentUpdateRequest(TypedDict, total=False):
@@ -392,6 +395,7 @@ class ComponentUpdateRequest(TypedDict, total=False):
     is_default_enabled: bool
     is_active: bool
     settings: dict[str, Any]
+    required_plan_codes: list[str] | None
 
 
 class ComponentResponse(TypedDict):
@@ -402,6 +406,7 @@ class ComponentResponse(TypedDict):
     is_default_enabled: bool
     is_active: bool
     settings: dict[str, Any]
+    required_plan_codes: list[str] | None
     created_at: str
     updated_at: str
 
@@ -415,6 +420,9 @@ class UserComponentStatus(TypedDict, total=False):
     code: str
     name: str
     is_enabled: bool
+    # "default" / "plan" / "override"
     source: str
     description: str | None
     reason: str | None
+    # Set when source="plan": the codes the tenant would need to be on.
+    required_plan_codes: list[str] | None

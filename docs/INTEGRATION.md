@@ -610,6 +610,26 @@ if (me.components["voice-overlay"]) {
 }
 ```
 
+**Plan-driven tier gating.** The platform owner can mark a component
+as "Pro+ only" via the admin-only `required_plan_codes` field. Tenants
+on a non-qualifying plan see the component in `GET /components` with
+`is_enabled: false`, `source: "plan"`, and a `required_plan_codes`
+hint your UI can show in an upgrade prompt:
+
+```json
+{
+  "code": "compliance-audit",
+  "name": "Compliance Audit",
+  "is_enabled": false,
+  "source": "plan",
+  "required_plan_codes": ["enterprise"]
+}
+```
+
+A per-user override still wins, so beta-access grants without a plan
+upgrade work unchanged. Custom plans (e.g. `acme-custom-2026`) work
+seamlessly — include the custom plan code in the list.
+
 The full list with reasons (when a user has a tenant-admin override
 that disabled them):
 

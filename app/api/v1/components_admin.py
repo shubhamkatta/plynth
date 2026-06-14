@@ -92,6 +92,7 @@ async def create_component_admin(
         is_default_enabled=payload.is_default_enabled,
         is_active=payload.is_active,
         settings=payload.settings,
+        required_plan_codes=payload.required_plan_codes,
     )
     return ComponentResponse.model_validate(row, from_attributes=True)
 

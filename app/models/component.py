@@ -109,3 +109,39 @@ class UserComponentOverride(
     set_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False,
     )
+
+
+class TenantComponentOverride(
+    UUIDPKMixin, TimestampMixin, ProductScopedMixin, TenantScopedMixin, Base
+):
+    """Per-tenant override of a component's default access.
+
+    Used for "Acme gets this feature without their plan including it"
+    type grants — applies to every user in the tenant unless a per-user
+    override overrides it (per-user > per-tenant in precedence).
+    """
+
+    __tablename__ = "tenant_component_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "component_id",
+            name="uq_tenant_component_overrides_tenant_component",
+        ),
+        Index("ix_tenant_component_overrides_component_id", "component_id"),
+    )
+
+    component_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("product_components.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    set_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    set_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+    )

@@ -390,3 +390,192 @@ async def test_cross_product_isolation(client: AsyncClient) -> None:
     )
     codes = {c["code"] for c in r.json()}
     assert codes == {"voice-overlay"}
+
+
+# ---------------------------------------------------------------------
+# Per-tenant overrides (Option B — ops grants)
+# ---------------------------------------------------------------------
+
+async def _tenant_id_for(client: AsyncClient, token: str) -> str:
+    me = (await client.get("/api/v1/auth/me", headers=auth(token))).json()
+    return me["tenant_id"]
+
+
+@pytest.mark.asyncio
+async def test_tenant_override_grants_plan_gated_component(client: AsyncClient) -> None:
+    """Ops grants a pro-only component to a free tenant via tenant override."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    tenant_id = await _tenant_id_for(client, tok["access_token"])
+
+    grant = await client.put(
+        f"{ADMIN_BASE}/tenants/{tenant_id}/voice-overlay",
+        json={"is_enabled": True, "reason": "comped trial"},
+        headers=platform_admin_headers(),
+    )
+    assert grant.status_code == 200, grant.text
+    assert grant.json()["is_enabled"] is True
+    assert grant.json()["source"] == "tenant_override"
+
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    assert by_code["voice-overlay"]["is_enabled"] is True
+    assert by_code["voice-overlay"]["source"] == "tenant_override"
+    assert by_code["voice-overlay"]["reason"] == "comped trial"
+
+
+@pytest.mark.asyncio
+async def test_tenant_override_can_revoke_default_on_component(client: AsyncClient) -> None:
+    """Tenant override flips a default-on component off for everyone in the tenant."""
+    await client.post(ADMIN_BASE, json=_comp("voice-overlay"), headers=platform_admin_headers())
+    tok = await register_tenant(client, slug="acme")
+    tenant_id = await _tenant_id_for(client, tok["access_token"])
+
+    await client.put(
+        f"{ADMIN_BASE}/tenants/{tenant_id}/voice-overlay",
+        json={"is_enabled": False, "reason": "tenant-wide disable"},
+        headers=platform_admin_headers(),
+    )
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    assert by_code["voice-overlay"]["is_enabled"] is False
+    assert by_code["voice-overlay"]["source"] == "tenant_override"
+
+
+@pytest.mark.asyncio
+async def test_user_override_beats_tenant_override(client: AsyncClient) -> None:
+    """Per-user override always wins over tenant override."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    me = (await client.get("/api/v1/auth/me", headers=auth(tok["access_token"]))).json()
+    tenant_id = me["tenant_id"]
+
+    # Tenant override: enabled for whole tenant.
+    await client.put(
+        f"{ADMIN_BASE}/tenants/{tenant_id}/voice-overlay",
+        json={"is_enabled": True},
+        headers=platform_admin_headers(),
+    )
+    # User override: this one user is disabled.
+    await client.put(
+        f"/api/v1/users/{me['id']}/components/voice-overlay",
+        json={"is_enabled": False, "reason": "personal opt-out"},
+        headers=auth(tok["access_token"]),
+    )
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    assert by_code["voice-overlay"]["is_enabled"] is False
+    assert by_code["voice-overlay"]["source"] == "override"
+
+
+@pytest.mark.asyncio
+async def test_clear_tenant_override_reverts_to_plan_gate(client: AsyncClient) -> None:
+    """Removing the tenant override reverts to the plan-gated default."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    tenant_id = await _tenant_id_for(client, tok["access_token"])
+
+    await client.put(
+        f"{ADMIN_BASE}/tenants/{tenant_id}/voice-overlay",
+        json={"is_enabled": True},
+        headers=platform_admin_headers(),
+    )
+    cleared = await client.delete(
+        f"{ADMIN_BASE}/tenants/{tenant_id}/voice-overlay",
+        headers=platform_admin_headers(),
+    )
+    assert cleared.status_code == 204
+
+    rows = (await client.get("/api/v1/components", headers=auth(tok["access_token"]))).json()
+    by_code = {row["code"]: row for row in rows}
+    # Free tenant reverts to plan-gated False.
+    assert by_code["voice-overlay"]["is_enabled"] is False
+    assert by_code["voice-overlay"]["source"] == "plan"
+
+
+@pytest.mark.asyncio
+async def test_list_tenant_components_admin(client: AsyncClient) -> None:
+    """Admin tenant-effective listing returns sources without consulting user overrides."""
+    await client.post(ADMIN_BASE, json=_comp("everyone"), headers=platform_admin_headers())
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "pro-only", "name": "Pro Only", "required_plan_codes": ["pro"]},
+        headers=platform_admin_headers(),
+    )
+    tok = await register_tenant(client, slug="acme")
+    me = (await client.get("/api/v1/auth/me", headers=auth(tok["access_token"]))).json()
+    tenant_id = me["tenant_id"]
+
+    # Grant pro-only to this tenant.
+    await client.put(
+        f"{ADMIN_BASE}/tenants/{tenant_id}/pro-only",
+        json={"is_enabled": True, "reason": "comped"},
+        headers=platform_admin_headers(),
+    )
+    # User-level override should NOT influence the admin tenant view.
+    await client.put(
+        f"/api/v1/users/{me['id']}/components/pro-only",
+        json={"is_enabled": False, "reason": "test-only"},
+        headers=auth(tok["access_token"]),
+    )
+    r = await client.get(
+        f"{ADMIN_BASE}/tenants/{tenant_id}",
+        headers=platform_admin_headers(),
+    )
+    assert r.status_code == 200, r.text
+    by_code = {row["code"]: row for row in r.json()}
+    assert by_code["everyone"]["source"] == "default"
+    assert by_code["everyone"]["is_enabled"] is True
+    assert by_code["pro-only"]["source"] == "tenant_override"
+    assert by_code["pro-only"]["is_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_tenant_override_isolated_per_tenant(client: AsyncClient) -> None:
+    """Tenant override for Acme must not leak into Globex."""
+    await client.post(
+        ADMIN_BASE,
+        json={"code": "voice-overlay", "name": "Voice Overlay",
+              "required_plan_codes": ["pro"]},
+        headers=platform_admin_headers(),
+    )
+    tok_a = await register_tenant(client, slug="acme")
+    tok_b = await register_tenant(client, slug="globex")
+    tenant_a = await _tenant_id_for(client, tok_a["access_token"])
+
+    await client.put(
+        f"{ADMIN_BASE}/tenants/{tenant_a}/voice-overlay",
+        json={"is_enabled": True},
+        headers=platform_admin_headers(),
+    )
+    rows_b = (await client.get("/api/v1/components", headers=auth(tok_b["access_token"]))).json()
+    by_code_b = {row["code"]: row for row in rows_b}
+    assert by_code_b["voice-overlay"]["is_enabled"] is False
+    assert by_code_b["voice-overlay"]["source"] == "plan"
+
+
+@pytest.mark.asyncio
+async def test_tenant_override_unknown_tenant_404(client: AsyncClient) -> None:
+    await client.post(ADMIN_BASE, json=_comp("voice-overlay"), headers=platform_admin_headers())
+    bogus = "11111111-1111-1111-1111-111111111111"
+    r = await client.put(
+        f"{ADMIN_BASE}/tenants/{bogus}/voice-overlay",
+        json={"is_enabled": True},
+        headers=platform_admin_headers(),
+    )
+    assert r.status_code == 404

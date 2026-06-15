@@ -55,6 +55,7 @@ TENANT_TABLES = (
     "product_env_vars",
     "product_service_tokens",
     "refresh_tokens",
+    "tenant_component_overrides",
     "user_component_overrides",
     "user_roles",
     "subscriptions",

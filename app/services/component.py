@@ -20,7 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import Conflict, NotFound
 from app.core.tenant import bypass_product, bypass_tenant
-from app.models.component import ProductComponent, UserComponentOverride
+from app.models.component import (
+    ProductComponent,
+    TenantComponentOverride,
+    UserComponentOverride,
+)
 from app.models.user import User
 from app.services import audit
 
@@ -249,7 +253,149 @@ async def clear_user_override(
 
 
 # ---------------------------------------------------------------------
-# Effective access
+# Per-tenant overrides
+# ---------------------------------------------------------------------
+
+async def set_tenant_override(
+    db: AsyncSession,
+    *,
+    product_id: UUID,
+    tenant_id: UUID,
+    code: str,
+    is_enabled: bool,
+    reason: str | None = None,
+    actor_user_id: UUID | None = None,
+) -> TenantComponentOverride:
+    """Idempotent on (tenant_id, component_id). Updates is_enabled +
+    reason + set_at when an override already exists."""
+    component = await get_component(db, product_id=product_id, code=code)
+    now = datetime.now(UTC)
+    with bypass_product(), bypass_tenant():
+        existing = await db.scalar(
+            select(TenantComponentOverride).where(
+                TenantComponentOverride.tenant_id == tenant_id,
+                TenantComponentOverride.component_id == component.id,
+            )
+        )
+        if existing is None:
+            row = TenantComponentOverride(
+                product_id=product_id,
+                tenant_id=tenant_id,
+                component_id=component.id,
+                is_enabled=is_enabled,
+                reason=reason,
+                set_by_user_id=actor_user_id,
+                set_at=now,
+            )
+            db.add(row)
+            action = "component.tenant_override_created"
+        else:
+            existing.is_enabled = is_enabled
+            existing.reason = reason
+            existing.set_by_user_id = actor_user_id
+            existing.set_at = now
+            row = existing
+            action = "component.tenant_override_updated"
+        await db.flush()
+        await audit.record(
+            db,
+            action=action,
+            actor_user_id=actor_user_id,
+            resource_type="tenant_component_override",
+            resource_id=row.id,
+            product_id=product_id,
+            tenant_id=tenant_id,
+            diff={
+                "code": code,
+                "is_enabled": is_enabled,
+                "reason": reason,
+            },
+        )
+    return row
+
+
+async def clear_tenant_override(
+    db: AsyncSession,
+    *,
+    product_id: UUID,
+    tenant_id: UUID,
+    code: str,
+    actor_user_id: UUID | None = None,
+) -> None:
+    """Delete the tenant's override row. No-op if absent."""
+    component = await get_component(db, product_id=product_id, code=code)
+    with bypass_product(), bypass_tenant():
+        existing = await db.scalar(
+            select(TenantComponentOverride).where(
+                TenantComponentOverride.tenant_id == tenant_id,
+                TenantComponentOverride.component_id == component.id,
+            )
+        )
+        if existing is None:
+            return
+        await db.delete(existing)
+        await audit.record(
+            db,
+            action="component.tenant_override_cleared",
+            actor_user_id=actor_user_id,
+            resource_type="tenant_component_override",
+            resource_id=existing.id,
+            product_id=product_id,
+            tenant_id=tenant_id,
+            diff={"code": code},
+        )
+
+
+async def tenant_effective_components(
+    db: AsyncSession, *, product_id: UUID, tenant_id: UUID,
+) -> list[tuple[ProductComponent, bool, str, str | None]]:
+    """Tenant-level effective rows. Per-user overrides are NOT consulted —
+    this is what an admin UI shows when listing "what does my tenant get".
+
+    Precedence: tenant_override > plan gate > component default.
+    """
+    with bypass_product(), bypass_tenant():
+        components = (
+            await db.scalars(
+                select(ProductComponent)
+                .where(
+                    ProductComponent.product_id == product_id,
+                    ProductComponent.is_active.is_(True),
+                )
+                .order_by(ProductComponent.code)
+            )
+        ).all()
+        if not components:
+            return []
+        tenant_overrides = {
+            o.component_id: o
+            for o in (
+                await db.scalars(
+                    select(TenantComponentOverride).where(
+                        TenantComponentOverride.tenant_id == tenant_id,
+                        TenantComponentOverride.component_id.in_(
+                            [c.id for c in components]
+                        ),
+                    )
+                )
+            ).all()
+        }
+    tenant_plan_code = await _tenant_active_plan_code(
+        db, tenant_id=tenant_id, product_id=product_id,
+    )
+    out: list[tuple[ProductComponent, bool, str, str | None]] = []
+    for c in components:
+        ov = tenant_overrides.get(c.id)
+        if ov is not None:
+            out.append((c, ov.is_enabled, "tenant_override", ov.reason))
+        else:
+            is_enabled, source = _resolve_with_plan(c, tenant_plan_code=tenant_plan_code)
+            out.append((c, is_enabled, source, None))
+    return out
+
+
+# ---------------------------------------------------------------------
+# Effective access (user-level — full precedence chain)
 # ---------------------------------------------------------------------
 
 async def _tenant_active_plan_code(
@@ -310,10 +456,13 @@ async def user_effective_components(
     ACTIVE component in the user's product.
 
     ``source`` is one of:
-    - ``"override"`` — a per-user override row decided
-    - ``"plan"``     — component is plan-gated and the user's tenant
-                       isn't on one of the qualifying plans
-    - ``"default"``  — fell back to the component's ``is_default_enabled``
+    - ``"override"``        — a per-user override row decided
+    - ``"tenant_override"`` — a per-tenant override row decided
+    - ``"plan"``            — component is plan-gated and the user's tenant
+                              isn't on one of the qualifying plans
+    - ``"default"``         — fell back to the component's ``is_default_enabled``
+
+    Precedence: user_override > tenant_override > plan_gate > default.
 
     Inactive components are omitted entirely (the user can't reach them
     either way)."""
@@ -330,15 +479,25 @@ async def user_effective_components(
         ).all()
         if not components:
             return []
+        component_ids = [c.id for c in components]
         overrides = {
             o.component_id: o
             for o in (
                 await db.scalars(
                     select(UserComponentOverride).where(
                         UserComponentOverride.user_id == user.id,
-                        UserComponentOverride.component_id.in_(
-                            [c.id for c in components]
-                        ),
+                        UserComponentOverride.component_id.in_(component_ids),
+                    )
+                )
+            ).all()
+        }
+        tenant_overrides = {
+            o.component_id: o
+            for o in (
+                await db.scalars(
+                    select(TenantComponentOverride).where(
+                        TenantComponentOverride.tenant_id == user.tenant_id,
+                        TenantComponentOverride.component_id.in_(component_ids),
                     )
                 )
             ).all()
@@ -352,9 +511,13 @@ async def user_effective_components(
         ov = overrides.get(c.id)
         if ov is not None:
             out.append((c, ov.is_enabled, "override", ov.reason))
-        else:
-            is_enabled, source = _resolve_with_plan(c, tenant_plan_code=tenant_plan_code)
-            out.append((c, is_enabled, source, None))
+            continue
+        tov = tenant_overrides.get(c.id)
+        if tov is not None:
+            out.append((c, tov.is_enabled, "tenant_override", tov.reason))
+            continue
+        is_enabled, source = _resolve_with_plan(c, tenant_plan_code=tenant_plan_code)
+        out.append((c, is_enabled, source, None))
     return out
 
 
@@ -365,9 +528,7 @@ async def user_has_component_access(
     or doesn't exist (so callers don't accidentally grant access to a
     deleted module).
 
-    Honours plan gating: if the component declares ``required_plan_codes``
-    and the user's tenant is not on a qualifying plan, returns False
-    (unless a per-user override grants access)."""
+    Precedence: user_override > tenant_override > plan_gate > default."""
     with bypass_product(), bypass_tenant():
         component = await db.scalar(
             select(ProductComponent).where(
@@ -383,8 +544,16 @@ async def user_has_component_access(
                 UserComponentOverride.component_id == component.id,
             )
         )
-    if ov is not None:
-        return ov.is_enabled
+        if ov is not None:
+            return ov.is_enabled
+        tov = await db.scalar(
+            select(TenantComponentOverride).where(
+                TenantComponentOverride.tenant_id == user.tenant_id,
+                TenantComponentOverride.component_id == component.id,
+            )
+        )
+    if tov is not None:
+        return tov.is_enabled
     tenant_plan_code = await _tenant_active_plan_code(
         db, tenant_id=user.tenant_id, product_id=user.product_id,
     )

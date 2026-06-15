@@ -74,11 +74,37 @@ class UserComponentStatus(BaseModel):
     code: str
     name: str
     is_enabled: bool
-    # "default"  = inherits is_default_enabled (no plan gate or gate satisfied)
-    # "plan"     = plan-gated and user's plan doesn't qualify → False
-    # "override" = explicit per-user override row
+    # "default"         = inherits is_default_enabled (no plan gate, or gate satisfied)
+    # "plan"            = plan-gated and user's plan doesn't qualify → False
+    # "tenant_override" = a per-tenant override row decided
+    # "override"        = a per-user override row decided (highest precedence)
     source: str
     description: str | None = None
-    reason: str | None = None  # set only when source="override"
+    reason: str | None = None  # set when source ∈ {"override", "tenant_override"}
     # Set when source="plan" — the codes the user would need to be on.
     required_plan_codes: list[str] | None = None
+
+
+class TenantComponentOverrideSet(BaseModel):
+    """PUT body — set a per-tenant override. Applies to every user in
+    the tenant unless overridden by a per-user override."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_enabled: bool
+    reason: str | None = Field(default=None, max_length=255)
+
+
+class TenantComponentStatus(BaseModel):
+    """Tenant-level effective row — ignores per-user overrides."""
+
+    code: str
+    name: str
+    is_enabled: bool
+    # "default"         = no override, no plan gate (or gate satisfied)
+    # "plan"            = plan-gated and not qualifying
+    # "tenant_override" = explicit per-tenant row decided
+    source: str
+    description: str | None = None
+    reason: str | None = None  # set when source="tenant_override"
+    required_plan_codes: list[str] | None = None  # set when source="plan"

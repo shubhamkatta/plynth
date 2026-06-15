@@ -433,13 +433,34 @@ export interface UserComponentStatus {
   name: string;
   is_enabled: boolean;
   /**
-   * `"default"`  → fell back to `is_default_enabled` (no plan gate, or gate satisfied)
-   * `"plan"`     → component is plan-gated and the tenant's plan doesn't qualify
-   * `"override"` → explicit per-user override row decided
+   * `"default"`         → fell back to `is_default_enabled` (no plan gate, or gate satisfied)
+   * `"plan"`            → component is plan-gated and the tenant's plan doesn't qualify
+   * `"tenant_override"` → explicit per-tenant override row decided
+   * `"override"`        → explicit per-user override row decided (highest precedence)
    */
   source: string;
   description?: string | null;
   reason?: string | null;
   /** Set when `source === "plan"`: the codes the tenant would need to be on. */
+  required_plan_codes?: string[] | null;
+}
+
+export interface TenantComponentOverrideRequest {
+  is_enabled: boolean;
+  reason?: string;
+}
+
+export interface TenantComponentStatus {
+  code: string;
+  name: string;
+  is_enabled: boolean;
+  /**
+   * `"default"`         → no override, no plan gate (or gate satisfied)
+   * `"plan"`            → plan-gated and tenant's plan doesn't qualify
+   * `"tenant_override"` → explicit per-tenant override row decided
+   */
+  source: string;
+  description?: string | null;
+  reason?: string | null;
   required_plan_codes?: string[] | null;
 }

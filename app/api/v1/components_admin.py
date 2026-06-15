@@ -26,11 +26,14 @@ from app.core.tenant import (
     set_current_product,
     set_current_tenant,
 )
+from app.models.component import ProductComponent
 from app.models.tenant import Tenant
 from app.schemas.component import (
     ComponentCreate,
     ComponentResponse,
     ComponentUpdate,
+    TenantComponentOverrideSet,
+    TenantComponentStatus,
 )
 from app.services import component as component_svc
 from app.services import product as product_svc
@@ -122,3 +125,95 @@ async def delete_component_admin(
 ) -> None:
     pid = await _resolve_product_slug(db, slug)
     await component_svc.delete_component(db, product_id=pid, code=code)
+
+
+# --- per-tenant overrides (ops grants) -------------------------------
+
+async def _resolve_tenant_in_product(
+    db: AsyncSession, *, product_id: UUID, tenant_id: UUID,
+) -> Tenant:
+    with bypass_product(), bypass_tenant():
+        tenant = await db.get(Tenant, tenant_id)
+    if (
+        tenant is None
+        or tenant.deleted_at is not None
+        or tenant.product_id != product_id
+    ):
+        raise NotFound(f"tenant {tenant_id} not found in product")
+    return tenant
+
+
+def _to_tenant_status(
+    c: ProductComponent, is_enabled: bool, source: str, reason: str | None,
+) -> TenantComponentStatus:
+    return TenantComponentStatus(
+        code=c.code, name=c.name, is_enabled=is_enabled,
+        source=source, description=c.description, reason=reason,
+        required_plan_codes=(c.required_plan_codes if source == "plan" else None),
+    )
+
+
+@router.get(
+    "/tenants/{tenant_id}",
+    response_model=list[TenantComponentStatus],
+    summary="List tenant-effective components (admin view of one tenant's access)",
+)
+async def list_tenant_components_admin(
+    slug: Annotated[str, Path()],
+    tenant_id: Annotated[UUID, Path()],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[TenantComponentStatus]:
+    pid = await _resolve_product_slug(db, slug)
+    await _resolve_tenant_in_product(db, product_id=pid, tenant_id=tenant_id)
+    rows = await component_svc.tenant_effective_components(
+        db, product_id=pid, tenant_id=tenant_id,
+    )
+    return [_to_tenant_status(c, e, s, r) for (c, e, s, r) in rows]
+
+
+@router.put(
+    "/tenants/{tenant_id}/{code}",
+    response_model=TenantComponentStatus,
+    summary="Set a per-tenant override (grant or revoke component for a tenant)",
+)
+async def set_tenant_component_override_admin(
+    slug: Annotated[str, Path()],
+    tenant_id: Annotated[UUID, Path()],
+    code: Annotated[str, Path(pattern=_CODE_RE, max_length=64)],
+    payload: TenantComponentOverrideSet,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TenantComponentStatus:
+    pid = await _resolve_product_slug(db, slug)
+    await _resolve_tenant_in_product(db, product_id=pid, tenant_id=tenant_id)
+    await component_svc.set_tenant_override(
+        db,
+        product_id=pid,
+        tenant_id=tenant_id,
+        code=code,
+        is_enabled=payload.is_enabled,
+        reason=payload.reason,
+    )
+    component = await component_svc.get_component(db, product_id=pid, code=code)
+    return TenantComponentStatus(
+        code=component.code, name=component.name,
+        is_enabled=payload.is_enabled, source="tenant_override",
+        description=component.description, reason=payload.reason,
+    )
+
+
+@router.delete(
+    "/tenants/{tenant_id}/{code}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Clear a per-tenant override (revert to plan gate / default)",
+)
+async def clear_tenant_component_override_admin(
+    slug: Annotated[str, Path()],
+    tenant_id: Annotated[UUID, Path()],
+    code: Annotated[str, Path(pattern=_CODE_RE, max_length=64)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    pid = await _resolve_product_slug(db, slug)
+    await _resolve_tenant_in_product(db, product_id=pid, tenant_id=tenant_id)
+    await component_svc.clear_tenant_override(
+        db, product_id=pid, tenant_id=tenant_id, code=code,
+    )

@@ -420,9 +420,25 @@ class UserComponentStatus(TypedDict, total=False):
     code: str
     name: str
     is_enabled: bool
-    # "default" / "plan" / "override"
+    # "default" / "plan" / "tenant_override" / "override"
     source: str
     description: str | None
     reason: str | None
     # Set when source="plan": the codes the tenant would need to be on.
+    required_plan_codes: list[str] | None
+
+
+class TenantComponentOverrideRequest(TypedDict, total=False):
+    is_enabled: bool
+    reason: str | None
+
+
+class TenantComponentStatus(TypedDict, total=False):
+    code: str
+    name: str
+    is_enabled: bool
+    # "default" / "plan" / "tenant_override"
+    source: str
+    description: str | None
+    reason: str | None
     required_plan_codes: list[str] | None

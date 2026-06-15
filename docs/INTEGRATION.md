@@ -630,6 +630,23 @@ A per-user override still wins, so beta-access grants without a plan
 upgrade work unchanged. Custom plans (e.g. `acme-custom-2026`) work
 seamlessly — include the custom plan code in the list.
 
+**Per-tenant overrides ("ops grants").** Platform admins can grant a
+component to a whole tenant without changing their plan — useful for
+sales-led trials, comped customers, or one-off custom deals. Precedence:
+**user_override > tenant_override > plan_gate > default**. When a tenant
+override decides, clients see `source: "tenant_override"` with the
+admin's `reason` attached:
+
+```json
+{
+  "code": "compliance-audit",
+  "name": "Compliance Audit",
+  "is_enabled": true,
+  "source": "tenant_override",
+  "reason": "comped through 2026-Q3"
+}
+```
+
 The full list with reasons (when a user has a tenant-admin override
 that disabled them):
 
@@ -658,6 +675,22 @@ X-Product-Slug: mayva
 
 DELETE /api/v1/users/{user_id}/components/voice-overlay   # revert to default
 → 204
+```
+
+**Tenant override surface** (platform admin token):
+
+```http
+GET /api/v1/admin/products/{slug}/components/tenants/{tenant_id}
+X-Platform-Admin-Token: ...
+→ 200  # tenant-effective listing (per-user overrides ignored)
+
+PUT /api/v1/admin/products/{slug}/components/tenants/{tenant_id}/voice-overlay
+X-Platform-Admin-Token: ...
+{ "is_enabled": true, "reason": "comped trial through Q3" }
+→ 200
+
+DELETE /api/v1/admin/products/{slug}/components/tenants/{tenant_id}/voice-overlay
+→ 204   # revert to plan gate / default
 ```
 
 **Rules**:

@@ -45,6 +45,8 @@ from plynth_sdk.types import (
     ServiceTokenResponse,
     Subscription,
     Tenant,
+    TenantComponentOverrideRequest,
+    TenantComponentStatus,
     Tokens,
     UpdateProductRequest,
     UpdateRoleRequest,
@@ -358,6 +360,33 @@ class AdminComponentsResource(_Base):
     def delete(self, slug: str, code: str) -> None:
         self._c.request(
             RequestSpec("DELETE", f"/api/v1/admin/products/{slug}/components/{code}",
+                        as_platform_admin=True, idempotent=True)
+        )
+
+    def list_tenant(self, slug: str, tenant_id: str) -> List[TenantComponentStatus]:
+        """Tenant-effective listing for one tenant. Per-user overrides ignored."""
+        return self._c.request(
+            RequestSpec("GET",
+                        f"/api/v1/admin/products/{slug}/components/tenants/{tenant_id}",
+                        as_platform_admin=True)
+        )
+
+    def set_tenant_override(
+        self, slug: str, tenant_id: str, code: str,
+        req: TenantComponentOverrideRequest,
+    ) -> TenantComponentStatus:
+        """Set a per-tenant override (ops grant). Per-user override still wins."""
+        return self._c.request(
+            RequestSpec("PUT",
+                        f"/api/v1/admin/products/{slug}/components/tenants/{tenant_id}/{code}",
+                        json_body=dict(req),
+                        as_platform_admin=True, idempotent=True)
+        )
+
+    def clear_tenant_override(self, slug: str, tenant_id: str, code: str) -> None:
+        self._c.request(
+            RequestSpec("DELETE",
+                        f"/api/v1/admin/products/{slug}/components/tenants/{tenant_id}/{code}",
                         as_platform_admin=True, idempotent=True)
         )
 

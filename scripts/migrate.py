@@ -303,6 +303,35 @@ MIGRATIONS: list[tuple[str, str]] = [
           ADD COLUMN IF NOT EXISTS required_plan_codes JSONB
         """,
     ),
+    # Per-tenant component overrides. Parallel shape to
+    # user_component_overrides; used for "give Acme this component
+    # without upgrading their plan" grants. Per-user override still
+    # beats per-tenant override (see app/services/component.py).
+    (
+        "0011_tenant_component_overrides",
+        """
+        CREATE TABLE IF NOT EXISTS tenant_component_overrides (
+          id              UUID PRIMARY KEY,
+          product_id      UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          tenant_id       UUID NOT NULL REFERENCES tenants(id)  ON DELETE CASCADE,
+          component_id    UUID NOT NULL REFERENCES product_components(id) ON DELETE CASCADE,
+          is_enabled      BOOLEAN NOT NULL,
+          reason          VARCHAR(255),
+          set_by_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
+          set_at          TIMESTAMPTZ NOT NULL,
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ix_tenant_component_overrides_product_id
+          ON tenant_component_overrides (product_id);
+        CREATE INDEX IF NOT EXISTS ix_tenant_component_overrides_tenant_id
+          ON tenant_component_overrides (tenant_id);
+        CREATE INDEX IF NOT EXISTS ix_tenant_component_overrides_component_id
+          ON tenant_component_overrides (component_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_component_overrides_tenant_component
+          ON tenant_component_overrides (tenant_id, component_id)
+        """,
+    ),
 ]
 
 

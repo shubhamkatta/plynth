@@ -1133,7 +1133,9 @@ curl https://api.example.com/api/v1/env -H "X-Service-Token: pst_…"
 
 > Source-of-truth contract for the per-product components system.
 > Implemented in `app/{models,schemas,services,api/v1}/component*.py`.
-> Schema migration: `scripts/migrate.py` step `0009_product_components`.
+> Schema migrations: `scripts/migrate.py` steps
+> `0009_product_components`, `0010_components_required_plan_codes`,
+> `0011_tenant_component_overrides`.
 
 #### Purpose
 
@@ -1165,24 +1167,39 @@ user_component_overrides
    is_enabled BOOLEAN, reason, set_by_user_id, set_at,
    created_at, updated_at)
   UNIQUE (user_id, component_id)
+
+tenant_component_overrides
+  (id, product_id, tenant_id, component_id,
+   is_enabled BOOLEAN, reason, set_by_user_id, set_at,
+   created_at, updated_at)
+  UNIQUE (tenant_id, component_id)
 ```
 
 #### Effective access
 
+Precedence (highest → lowest): **user_override > tenant_override > plan_gate > default**.
+
 For a given (user, component):
 
-1. Look up the override row keyed by (user_id, component_id).
-2. **If present** → `override.is_enabled` wins.
-3. **If absent AND `required_plan_codes` is set:**
+1. Look up the **per-user** override row keyed by (user_id, component_id).
+2. **If present** → `override.is_enabled` wins (source = `override`).
+3. **Else** look up the **per-tenant** override row keyed by (tenant_id, component_id).
+4. **If present** → `tenant_override.is_enabled` wins (source = `tenant_override`).
+5. **Else if `required_plan_codes` is set:**
    - Look up the tenant's active subscription's plan `code`.
    - If the plan code is in `required_plan_codes` → fall through to
      `component.is_default_enabled` (source = `default`).
    - Else → `False`, source = `plan`. The response includes the
      `required_plan_codes` hint so clients can render upgrade prompts.
-4. **If absent AND no plan gate** → `component.is_default_enabled`
+6. **Else (no plan gate)** → `component.is_default_enabled`
    (source = `default`).
-5. Inactive components (`is_active = false`) are uniformly hidden
+7. Inactive components (`is_active = false`) are uniformly hidden
    from listings and access checks return False.
+
+Tenant overrides are the "ops grant" lever: give Acme a feature
+without upgrading their plan. Per-user overrides still beat tenant
+overrides, so individual users can still be exempted in either
+direction.
 
 "Active subscription" = `Subscription.has_access` is True (TRIAL,
 ACTIVE, PAST_DUE, GRACE all count). Suspended / cancelled / expired
@@ -1201,10 +1218,13 @@ Helpers in `app/services/component.py`:
 | Create | `POST /admin/products/{slug}/components` | platform admin | `code` immutable after create |
 | Update | `PATCH /admin/products/{slug}/components/{code}` | platform admin | name / description / `is_default_enabled` / `is_active` / `settings` |
 | Delete | `DELETE /admin/products/{slug}/components/{code}` | platform admin | Cascades to override rows |
+| List tenant-effective | `GET /admin/products/{slug}/components/tenants/{tenant_id}` | platform admin | Per-user overrides ignored — admin view of one tenant's access |
+| Set tenant override | `PUT /admin/products/{slug}/components/tenants/{tenant_id}/{code}` | platform admin | Ops grant; user override still wins |
+| Clear tenant override | `DELETE /admin/products/{slug}/components/tenants/{tenant_id}/{code}` | platform admin | Reverts to plan gate / default |
 | List (user view, active only) | `GET /components` | user JWT | `[{code, name, is_enabled, source, description, reason?}]` |
 | List for one user | `GET /users/{user_id}/components` | RBAC `components:read` | Target user must be in same tenant |
 | Set override | `PUT /users/{user_id}/components/{code}` | RBAC `components:override` | Idempotent on (user_id, component_id) |
-| Clear override | `DELETE /users/{user_id}/components/{code}` | RBAC `components:override` | Reverts to default |
+| Clear override | `DELETE /users/{user_id}/components/{code}` | RBAC `components:override` | Reverts to tenant override / plan / default |
 
 Plus a convenience embed in `GET /auth/me`:
 
@@ -1229,10 +1249,12 @@ Two RBAC codes (auto-seeded; no extra migration step):
 Every state change writes one of:
 `component.created`, `component.updated`, `component.deleted`,
 `component.override_created`, `component.override_updated`,
-`component.override_cleared`.
+`component.override_cleared`,
+`component.tenant_override_created`, `component.tenant_override_updated`,
+`component.tenant_override_cleared`.
 
-The component's `code` and target `user_id` go into `diff`; component
-`settings` does NOT.
+The component's `code` and target `user_id` / `tenant_id` go into
+`diff`; component `settings` does NOT.
 
 #### Common patterns
 

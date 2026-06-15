@@ -2,7 +2,11 @@
 
 from app.models.audit import AuditLog
 from app.models.base import Base
-from app.models.component import ProductComponent, UserComponentOverride
+from app.models.component import (
+    ProductComponent,
+    TenantComponentOverride,
+    UserComponentOverride,
+)
 from app.models.credit import CreditLedger, CreditWallet
 from app.models.env_var import ProductEnvVar
 from app.models.idempotency import IdempotencyKey
@@ -42,6 +46,7 @@ __all__ = [
     "StorageDocument",
     "Subscription",
     "Tenant",
+    "TenantComponentOverride",
     "User",
     "UserComponentOverride",
     "UserRole",

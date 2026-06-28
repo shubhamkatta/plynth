@@ -8,12 +8,15 @@ import json
 from typing import Any
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import Conflict, NotFound
 from app.core.redis import get_redis
 from app.models.product import Product, ProductStatus
+
+log = structlog.get_logger("product")
 
 SLUG_CACHE_KEY = "product:slug:{slug}"
 SLUG_CACHE_TTL_SECONDS = 300
@@ -61,20 +64,29 @@ async def create_product(
 async def resolve_slug_to_id(db: AsyncSession, slug: str) -> tuple[UUID, ProductStatus] | None:
     """Resolve a product slug to (id, status). Cached in Redis."""
     redis = get_redis()
-    cached = await redis.get(SLUG_CACHE_KEY.format(slug=slug))
-    if cached:
-        data = json.loads(cached)
-        return UUID(data["id"]), ProductStatus(data["status"])
+    try:
+        cached = await redis.get(SLUG_CACHE_KEY.format(slug=slug))
+        if cached:
+            data = json.loads(cached)
+            return UUID(data["id"]), ProductStatus(data["status"])
+    except Exception as exc:
+        log.warning("slug_cache.read_failed", slug=slug, error=str(exc))
 
     product = await get_by_slug(db, slug)
     if product is None:
         return None
     payload = json.dumps({"id": str(product.id), "status": product.status.value})
-    await redis.set(SLUG_CACHE_KEY.format(slug=slug), payload, ex=SLUG_CACHE_TTL_SECONDS)
+    try:
+        await redis.set(SLUG_CACHE_KEY.format(slug=slug), payload, ex=SLUG_CACHE_TTL_SECONDS)
+    except Exception as exc:
+        log.warning("slug_cache.write_failed", slug=slug, error=str(exc))
     return product.id, product.status
 
 
 async def invalidate_slug_cache(slug: str) -> None:
     """Call after `create_product` / status changes so the resolver picks
     up the change."""
-    await get_redis().delete(SLUG_CACHE_KEY.format(slug=slug))
+    try:
+        await get_redis().delete(SLUG_CACHE_KEY.format(slug=slug))
+    except Exception as exc:
+        log.warning("slug_cache.invalidate_failed", slug=slug, error=str(exc))

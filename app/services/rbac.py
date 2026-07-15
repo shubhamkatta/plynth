@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.tenant import bypass_product, bypass_tenant, current_tenant_id
 from app.models.permission import Permission, RolePermission
+from app.models.product import Product
 from app.models.role import Role, UserRole
 from app.models.user import User
 
@@ -46,6 +47,30 @@ SYSTEM_PERMISSIONS: list[tuple[str, str]] = [
     # Components (docs/architecture.md § 6.5)
     ("components:read", "List components + per-user effective access"),
     ("components:override", "Enable / disable a component for a specific user"),
+    # Mayva (product slug: mayva) — AI practice assistant for therapists.
+    # `audit:read` is shared with the platform group above (the catalog is
+    # global across products), so it is not repeated here.
+    ("client:create", "Create clients"),
+    ("client:read", "Read clients"),
+    ("client:update", "Update clients"),
+    ("session:create", "Create sessions"),
+    ("session:read", "Read sessions"),
+    ("session:update", "Update sessions"),
+    ("note:create", "Create session notes"),
+    ("note:read", "Read session notes"),
+    ("note:sign", "Sign session notes"),
+    ("availability:read", "Read availability (slots, time-off, closures)"),
+    ("availability:manage", "Manage availability (slots, time-off, closures)"),
+    ("booking:create", "Create bookings"),
+    ("booking:read", "Read bookings"),
+    ("booking:manage", "Manage bookings (reschedule / cancel / conflicts)"),
+    ("inbox:read", "Read inbox conversations"),
+    ("inbox:send", "Send inbox messages"),
+    ("approval:decide", "Approve / reject AI-drafted actions"),
+    ("payment:read", "Read payments"),
+    ("payment:manage", "Manage payments (links, nudges, reconciliation)"),
+    ("digest:read", "Read practice digests"),
+    ("settings:manage", "Manage practice settings"),
 ]
 
 SYSTEM_ROLES: dict[str, list[str]] = {
@@ -77,6 +102,35 @@ SYSTEM_ROLES: dict[str, list[str]] = {
     ],
 }
 
+# Extra per-product system-role templates, keyed by product slug. Seeded by
+# `ensure_system_roles_for_product` IN ADDITION to SYSTEM_ROLES (which gives
+# every product owner / admin / member). `owner` already grants `*:*`, so a
+# product template only needs its product-specific staff roles.
+PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
+    "mayva": {
+        # Everything a therapist needs day-to-day; practice settings stay
+        # with the owner.
+        "practitioner": [
+            "client:create", "client:read", "client:update",
+            "session:create", "session:read", "session:update",
+            "note:create", "note:read", "note:sign",
+            "availability:read", "availability:manage",
+            "booking:create", "booking:read", "booking:manage",
+            "inbox:read", "inbox:send",
+            "approval:decide",
+            "payment:read", "payment:manage",
+            "digest:read",
+            "audit:read",
+        ],
+        # Front-desk help: see clients, run the calendar, read the inbox.
+        "assistant": [
+            "client:read",
+            "booking:create", "booking:read", "booking:manage",
+            "inbox:read",
+        ],
+    },
+}
+
 
 def _matches(granted: str, required: str) -> bool:
     """`*` matches any single segment; full wildcard `*:*` matches everything."""
@@ -104,12 +158,20 @@ async def ensure_system_roles_for_product(
 ) -> None:
     """Per-product system roles (owner / admin / member). Idempotent.
 
+    Products listed in `PRODUCT_SYSTEM_ROLES` (by slug) get their extra
+    role templates seeded on top of the shared owner / admin / member set.
+
     Wraps in `bypass_product` so it works during product bootstrap before
     the request-level product context has been set.
     """
     perm_catalog = await ensure_permission_catalog(db)
 
     with bypass_product(), bypass_tenant():
+        slug = await db.scalar(select(Product.slug).where(Product.id == product_id))
+        templates: dict[str, list[str]] = {
+            **SYSTEM_ROLES,
+            **PRODUCT_SYSTEM_ROLES.get(slug or "", {}),
+        }
         existing_roles = {
             r.name: r
             for r in (
@@ -120,7 +182,7 @@ async def ensure_system_roles_for_product(
                 )
             ).all()
         }
-        for name, perms in SYSTEM_ROLES.items():
+        for name, perms in templates.items():
             role = existing_roles.get(name)
             if role is None:
                 role = Role(

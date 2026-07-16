@@ -70,6 +70,8 @@ SYSTEM_PERMISSIONS: list[tuple[str, str]] = [
     ("payment:read", "Read payments"),
     ("payment:manage", "Manage payments (links, nudges, reconciliation)"),
     ("digest:read", "Read practice digests"),
+    ("gdpr:export", "Export a client's personal data (GDPR subject-access)"),
+    ("gdpr:erase", "Erase a client's personal data (GDPR right-to-erasure)"),
     ("settings:manage", "Manage practice settings"),
 ]
 
@@ -120,6 +122,7 @@ PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
             "approval:decide",
             "payment:read", "payment:manage",
             "digest:read",
+            "gdpr:export", "gdpr:erase",
             "audit:read",
         ],
         # Front-desk help: see clients, run the calendar, read the inbox.

@@ -39,6 +39,15 @@ services:
       redis: { condition: service_healthy }
     command: ["arq", "app.tasks.worker.WorkerSettings"]
     volumes: ["./:/app"]
+    # The worker is an arq process, not an HTTP server — override the image's
+    # api-oriented curl /health HEALTHCHECK with arq's own health probe, which
+    # checks the worker's health key in Redis.
+    healthcheck:
+      test: ["CMD", "arq", "app.tasks.worker.WorkerSettings", "--check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   pgdata:

@@ -11,4 +11,8 @@ def get_billing_provider() -> BillingProvider:
         # Imported lazily so the stripe SDK isn't loaded in mock-only environments.
         from app.providers.billing.stripe import StripeBillingProvider
         return StripeBillingProvider()
+    if settings.billing_provider == "razorpay":
+        # Lazy import keeps httpx-only Razorpay out of stripe/mock environments.
+        from app.providers.billing.razorpay import RazorpayBillingProvider
+        return RazorpayBillingProvider()
     return MockBillingProvider()

@@ -49,9 +49,14 @@ class Settings(BaseSettings):
     redis_url: RedisDsn
 
     # Billing
-    billing_provider: Literal["stripe", "mock"] = "mock"
+    billing_provider: Literal["stripe", "razorpay", "mock"] = "mock"
     stripe_api_key: str = ""
     stripe_webhook_secret: str = ""
+    # Razorpay (India). key_id + key_secret authenticate REST calls (Basic auth);
+    # webhook_secret verifies the X-Razorpay-Signature HMAC on inbound events.
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
 
     # Tenancy / billing lifecycle
     default_trial_days: int = 14

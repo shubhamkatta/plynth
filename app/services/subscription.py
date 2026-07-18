@@ -202,6 +202,19 @@ async def change_plan(
 
     sub.plan = new_plan
     await db.flush()
+    # Grant the new plan's credits on change — otherwise an upgrader receives the
+    # new plan's component entitlements but a stale/empty credit wallet until the
+    # next renewal (grant_plan_credits was previously only wired into
+    # start_trial/purchase/renewal). The reference is scoped to
+    # (subscription, new plan, current period), so re-changing to the same plan
+    # within a period is a no-op and never double-grants.
+    await credit.grant_plan_credits(
+        db,
+        tenant_id=tenant_id,
+        product_id=sub.product_id,
+        plan=new_plan,
+        reference=f"change:{sub.id}:{new_plan.code}:{sub.current_period_start.date()}",
+    )
     await audit.record(
         db,
         action="subscription.upgrade" if is_upgrade else "subscription.downgrade",

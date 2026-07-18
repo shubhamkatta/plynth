@@ -195,13 +195,11 @@ async def _ensure_plans(db: AsyncSession, product_id: UUID) -> dict[str, Plan]:
                 else:
                     feat.credit_amount = spec["ai_messages"]
 
-        # Deactivate legacy plans not in the catalog (e.g. the generic
-        # free/pro/enterprise seeded at product bootstrap).
-        for code, plan in existing.items():
-            if code not in CATALOG_PLAN_CODES and plan.is_active:
-                plan.is_active = False
-                plan.is_public = False
-                log.info("seed_mayva.legacy_plan_deactivated", code=code)
+        # Additive only — legacy plans (free/pro/enterprise/…) are intentionally
+        # LEFT UNTOUCHED. The 'mayva' product slug is shared with an earlier
+        # product version whose users still hold active legacy-plan subscriptions
+        # (e.g. free); deactivating those plans out from under a live subscriber
+        # would break their access. New catalog plans are simply added alongside.
         await db.flush()
     return by_code
 

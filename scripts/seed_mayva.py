@@ -37,16 +37,17 @@ from app.core.tenant import (
 )
 from app.models.credit import CreditWallet
 from app.models.plan import BillingInterval, Plan, PlanFeature
-from app.models.product import Product
+from app.models.product import Product, ProductStatus
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.tenant import Tenant
 from app.services import component as component_svc
 from app.services import credit as credit_svc
 from app.services import plan as plan_svc
+from app.services import rbac
 
 log = get_logger("seed_mayva")
 
-PRODUCT_SLUG = "mayva"
+PRODUCT_SLUG = "mayva-practice"
 
 # The dev/demo tenant that Mayva's gate0 / DEV tenant maps to.
 DEV_TENANT_SLUG = "test-practice"
@@ -300,10 +301,21 @@ async def main() -> None:
                 select(Product).where(Product.slug == PRODUCT_SLUG)
             )
             if product is None:
-                raise SystemExit(
-                    f"product {PRODUCT_SLUG!r} not found — create it first via "
-                    f"POST /admin/products {{'slug': 'mayva'}}"
+                # Self-contained bootstrap: the mayva-practice product is the
+                # therapist front-desk product, kept SEPARATE from the legacy
+                # 'mayva' product (whose old users must stay intact). Create it
+                # + its system roles here so this seed sets up a greenfield
+                # environment (local or prod) in one run.
+                product = Product(
+                    name="Mayva Practice",
+                    slug=PRODUCT_SLUG,
+                    status=ProductStatus.ACTIVE,
+                    is_active=True,
                 )
+                db.add(product)
+                await db.flush()
+                await rbac.ensure_system_roles_for_product(db, product_id=product.id)
+                log.info("seed_mayva.product_created", slug=PRODUCT_SLUG)
             tenant = await db.scalar(
                 select(Tenant).where(
                     Tenant.product_id == product.id, Tenant.slug == DEV_TENANT_SLUG

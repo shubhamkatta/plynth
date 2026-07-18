@@ -40,7 +40,7 @@ from app.services import product as product_svc
 
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
-_CODE_RE = r"^[a-z][a-z0-9-]{0,63}$"
+_CODE_RE = r"^[a-z][a-z0-9_-]{0,63}$"
 
 
 async def _resolve_product_slug(db: AsyncSession, slug: str) -> UUID:

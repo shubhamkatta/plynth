@@ -61,6 +61,25 @@ async def test_admin_invalid_code_pattern_422(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_admin_underscore_code_accepted(client: AsyncClient) -> None:
+    """Snake_case codes (e.g. Mayva's `ai_receptionist`) are valid — the
+    code pattern allows hyphen or underscore, matching plan / feature-key
+    code style."""
+    r = await client.post(
+        ADMIN_BASE, json=_comp("ai_receptionist"), headers=platform_admin_headers(),
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["code"] == "ai_receptionist"
+    # And it round-trips through the per-code admin path param.
+    patched = await client.patch(
+        f"{ADMIN_BASE}/ai_receptionist",
+        json={"description": "AI front desk"},
+        headers=platform_admin_headers(),
+    )
+    assert patched.status_code == 200, patched.text
+
+
+@pytest.mark.asyncio
 async def test_admin_patch_default(client: AsyncClient) -> None:
     await client.post(ADMIN_BASE, json=_comp("voice-overlay"), headers=platform_admin_headers())
     r = await client.patch(

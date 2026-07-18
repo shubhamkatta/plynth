@@ -1160,7 +1160,7 @@ product_components
                                         -- list = "Pro+" tier gate
    created_at, updated_at)
   UNIQUE (product_id, code)
-  code pattern: ^[a-z][a-z0-9-]{0,63}$   (kebab-case slug)
+  code pattern: ^[a-z][a-z0-9_-]{0,63}$  (lowercase slug; hyphen or underscore)
 
 user_component_overrides
   (id, product_id, tenant_id, user_id, component_id,

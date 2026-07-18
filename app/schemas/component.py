@@ -8,9 +8,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Conventional component code: lowercase, kebab-case. Same shape as a
-# URL slug so it composes cleanly into paths.
-_CODE_PATTERN = r"^[a-z][a-z0-9-]{0,63}$"
+# Conventional component code: lowercase, starts with a letter, then
+# letters / digits / hyphen / underscore. Composes cleanly into paths and
+# matches the code style used by plan codes and credit feature_keys
+# (both of which already permit underscores, e.g. `credits.ai_completion`).
+_CODE_PATTERN = r"^[a-z][a-z0-9_-]{0,63}$"
 
 
 class ComponentCreate(BaseModel):

@@ -31,7 +31,7 @@ from app.services import component as component_svc
 router = APIRouter()
 users_router = APIRouter()
 
-_CODE_RE = r"^[a-z][a-z0-9-]{0,63}$"
+_CODE_RE = r"^[a-z][a-z0-9_-]{0,63}$"
 
 
 def _to_status(

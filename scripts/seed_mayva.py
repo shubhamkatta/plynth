@@ -103,6 +103,16 @@ PLANS: list[dict] = [
         # component and Mayva skips credit consumption entirely.
         "ai_messages": None,
     },
+    {
+        "code": "beta",
+        "name": "Beta (all features)",
+        "description": "Early-access / internal beta — every feature enabled, unlimited AI.",
+        "price_cents": 0,
+        "trial_days": 0,
+        "is_public": False,        # not shown in the public /plans list
+        # Unlimited AI via the `unlimited_ai` component (below) — no quota.
+        "ai_messages": None,
+    },
 ]
 
 # --------------------------------------------------------------------------
@@ -111,9 +121,11 @@ PLANS: list[dict] = [
 # in /auth/me. Essentials qualifies for none (booking + typed notes are the
 # ungated baseline, not components).
 # --------------------------------------------------------------------------
-_PRACTICE_UP = ["practice", "concierge", "clinic"]
-_CONCIERGE_UP = ["concierge", "clinic"]
-_CLINIC_ONLY = ["clinic"]
+# "beta" is included in every gate so the Beta plan unlocks ALL components
+# (including unlimited_ai → no AI-message quota). Early-access / internal tier.
+_PRACTICE_UP = ["practice", "concierge", "clinic", "beta"]
+_CONCIERGE_UP = ["concierge", "clinic", "beta"]
+_CLINIC_ONLY = ["clinic", "beta"]
 
 COMPONENTS: list[dict] = [
     {"code": "ai_receptionist", "name": "AI Receptionist",

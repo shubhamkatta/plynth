@@ -84,15 +84,16 @@ def test_component_plan_gating_spec() -> None:
         "followup_agent", "analytics", "multi_practitioner", "admin_roles",
         "unlimited_ai",
     }
+    # The non-public 'beta' plan unlocks every component (all-features access).
     # Practice-and-up components.
     for code in ("ai_receptionist", "voice_notes", "payment_followups", "weekly_digest"):
-        assert gates[code] == ["practice", "concierge", "clinic"]
+        assert gates[code] == ["practice", "concierge", "clinic", "beta"]
     # Concierge-and-up.
     for code in ("followup_agent", "analytics"):
-        assert gates[code] == ["concierge", "clinic"]
-    # Clinic-only.
+        assert gates[code] == ["concierge", "clinic", "beta"]
+    # Clinic-only (+ beta).
     for code in ("multi_practitioner", "admin_roles", "unlimited_ai"):
-        assert gates[code] == ["clinic"]
+        assert gates[code] == ["clinic", "beta"]
 
 
 # ---------------------------------------------------------------------------

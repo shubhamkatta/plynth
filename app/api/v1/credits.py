@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import CurrentUser, require_permission, require_service_token
 from app.core.tenant import current_tenant_id
-from app.models.service_token import ProductServiceToken
 from app.models.credit import CreditLedger, CreditWallet
+from app.models.service_token import ProductServiceToken
 from app.schemas.credit import (
     CreditConsumeRequest,
     CreditGrantRequest,

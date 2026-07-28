@@ -73,6 +73,9 @@ SYSTEM_PERMISSIONS: list[tuple[str, str]] = [
     ("gdpr:export", "Export a client's personal data (GDPR subject-access)"),
     ("gdpr:erase", "Erase a client's personal data (GDPR right-to-erasure)"),
     ("settings:manage", "Manage practice settings"),
+    # Patient portal (end-patients provisioned as plynth users). Deliberately
+    # narrow — a patient reads only their own portal / history.
+    ("portal:read", "Read own patient portal (history, upcoming appointments)"),
 ]
 
 SYSTEM_ROLES: dict[str, list[str]] = {
@@ -130,6 +133,14 @@ PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
             "client:read",
             "booking:create", "booking:read", "booking:manage",
             "inbox:read",
+        ],
+        # End-patient portal login. DELIBERATELY NARROW: a patient may read
+        # only their own portal and book their own appointments. No access to
+        # other patients, clinical notes, sessions, inbox, payments, audit,
+        # availability internals, or any practice/admin data.
+        "patient": [
+            "portal:read",
+            "booking:create",
         ],
     },
 }

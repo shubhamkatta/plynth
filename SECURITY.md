@@ -45,7 +45,7 @@ Include if you can:
 - The reference Electron admin (`apps/admin-electron/`) — IPC surface,
   preload bridge, keychain handling.
 - Deploy configs in `docs/deploy-*.md`, `Dockerfile`, `docker-compose*.yml`,
-  `Caddyfile.example`, `fly.toml`, `scripts/`.
+  `Caddyfile.example`, `scripts/`.
 
 **Out of scope (file with the upstream):**
 
@@ -67,8 +67,8 @@ you. The shortlist:
 - **Keep `EXPOSE_OPENAPI` unset (or `false`)** in production unless you
   have a specific reason — the schema is free reconnaissance for
   attackers.
-- **Terminate TLS at a hardened reverse proxy** (Caddy + Cloudflare, or
-  Fly's edge). The app speaks plain HTTP behind it.
+- **Terminate TLS at a hardened reverse proxy** (Caddy + Cloudflare).
+  The app speaks plain HTTP behind it.
 - **Restrict SSH** on your deploy host (key-only, known IPs, fail2ban).
   See `docs/deploy-digitalocean.md` for a worked example.
 - **Don't commit `.env`.** The repo's `.gitignore` blocks it; verify

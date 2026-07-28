@@ -9,11 +9,10 @@ scaffold: one $6/mo DigitalOcean droplet running the existing
 auto-TLS, with nightly backups to Backblaze B2.
 
 End result: `https://api.example.com` is live and every product hits it.
-Migration to Fly / AWS later is a `pg_dump | ssh` + DNS flip (covered
+Migration to AWS later is a `pg_dump | ssh` + DNS flip (covered
 in § 14).
 
 > Architecture / contracts: `docs/ARCHITECTURE.md`.
-> Fly-equivalent runbook: `docs/deploy-fly.md`.
 
 Total time the first time: **~90 minutes**. Total cost: **~$8/mo all-in**.
 
@@ -284,7 +283,7 @@ In **Cloudflare → DNS → Add record**:
 |---|---|---|---|---|
 | `A` | `api` | `$DROPLET_IP` | **DNS only (grey cloud)** | Auto |
 
-> **CRITICAL:** proxy must be **DNS only**, not Proxied. Caddy does TLS itself — the Cloudflare proxy would intercept the ACME HTTP-01 challenge and break cert issuance. Same trade-off as Fly — you lose Cloudflare's DDoS/WAF in front of the API, but the Droplet's firewall + ufw absorb normal attacks.
+> **CRITICAL:** proxy must be **DNS only**, not Proxied. Caddy does TLS itself — the Cloudflare proxy would intercept the ACME HTTP-01 challenge and break cert issuance. The trade-off: you lose Cloudflare's DDoS/WAF in front of the API, but the Droplet's firewall + ufw absorb normal attacks.
 
 Wait 30 sec, verify:
 ```bash
@@ -571,7 +570,7 @@ No code changes. Same Dockerfile, same compose, same secrets. The only differenc
 ## Bookmark this URL
 
 `https://api.example.com` — your platform's stable address. Same domain
-whether the backend lives on this droplet, a Fly machine, or AWS Fargate.
+whether the backend lives on this droplet or AWS Fargate.
 Every product (web, Electron, mobile) hard-codes this plus
 `X-Product-Slug: <theirs>` on every call.
 

@@ -363,7 +363,6 @@ MIT — see [`LICENSE`](LICENSE).
 | [`docs/credits.md`](docs/credits.md) | Ledger model, atomic consumption pattern. |
 | [`docs/deployment.md`](docs/deployment.md) | Production checklist (generic). |
 | [`docs/deploy-digitalocean.md`](docs/deploy-digitalocean.md) | DigitalOcean droplet + Caddy + B2 backups runbook. |
-| [`docs/deploy-fly.md`](docs/deploy-fly.md) | Fly.io + Neon + Upstash runbook. |
 | [`docs/postman_collection.json`](docs/postman_collection.json) | Runnable API collection — import into Postman. |
 | [`apps/admin-electron/README.md`](apps/admin-electron/README.md) | Reference Electron client for the platform. |
 | [`sdks/typescript/README.md`](sdks/typescript/README.md) | `@plynth/sdk` — official TypeScript SDK (Node 20+, browsers, Edge). |

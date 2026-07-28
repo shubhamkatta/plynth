@@ -11,6 +11,7 @@ from app.api.v1 import (
     env_admin,
     integrations,
     jobs,
+    mfa,
     plans,
     roles,
     storage,
@@ -24,6 +25,7 @@ from app.api.v1 import (
 api_router = APIRouter()
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(mfa.router, prefix="/auth/mfa", tags=["mfa"])
 api_router.include_router(tenants.router, prefix="/tenants", tags=["tenants"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(roles.router, prefix="/roles", tags=["roles"])

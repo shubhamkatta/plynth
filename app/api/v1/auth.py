@@ -13,6 +13,7 @@ from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
     MeResponse,
+    MfaChallengeRequired,
     PasswordChangeRequest,
     RefreshRequest,
     RegisterIndividualRequest,
@@ -22,6 +23,7 @@ from app.schemas.auth import (
 )
 from app.services import auth as auth_svc
 from app.services import component as component_svc
+from app.services import mfa as mfa_svc
 from app.services.rbac import list_user_permission_codes
 
 router = APIRouter()
@@ -91,19 +93,26 @@ async def register_individual(
     return TokenPair(access_token=access, refresh_token=refresh, expires_at=exp)
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post("/login")
 async def login(
     payload: LoginRequest,
     request: Request,
     product_id: RequireProduct,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TokenPair:
-    _, access, refresh, exp = await auth_svc.login(
+) -> TokenPair | MfaChallengeRequired:
+    user = await auth_svc.verify_credentials(
         db,
         product_id=product_id,
         email=payload.email,
         password=payload.password,
         tenant_slug=payload.tenant_slug,
+        ip_address=request.client.host if request.client else None,
+    )
+    if user.mfa_method:
+        return await mfa_svc.create_challenge(db, user=user)
+    _, access, refresh, exp = await auth_svc.complete_login(
+        db,
+        user=user,
         user_agent=request.headers.get("user-agent"),
         ip_address=request.client.host if request.client else None,
     )
@@ -175,13 +184,13 @@ async def reset_password(
     )
 
 
-@router.post("/google", response_model=TokenPair)
+@router.post("/google")
 async def login_google(
     payload: GoogleLoginRequest,
     request: Request,
     product_id: RequireProduct,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TokenPair:
+) -> TokenPair | MfaChallengeRequired:
     """OAuth2 authorization-code login.
 
     Frontend flow:
@@ -191,17 +200,25 @@ async def login_google(
     2. Google redirects back to `redirect_uri` with `code` + `state`.
     3. Frontend verifies `state`, then POSTs {code, redirect_uri} here.
 
-    Returns the standard TokenPair on success. If the email isn't
-    registered and the product hasn't opted into
-    `settings.features.google_auto_provision`, returns 401 — admin must
-    invite the user first."""
-    _, access, refresh, exp = await auth_svc.login_with_google(
+    Returns the standard TokenPair on success. If MFA is enabled for the
+    user, returns an MfaChallengeRequired instead — the client must then
+    verify the code at POST /auth/mfa/verify."""
+    user, google_ctx = await auth_svc.verify_google_credentials(
         db,
         product_id=product_id,
         code=payload.code,
         redirect_uri=payload.redirect_uri,
+        ip_address=request.client.host if request.client else None,
+    )
+    if user.mfa_method:
+        return await mfa_svc.create_challenge(db, user=user)
+    _, access, refresh, exp = await auth_svc.complete_login(
+        db,
+        user=user,
         user_agent=request.headers.get("user-agent"),
         ip_address=request.client.host if request.client else None,
+        audit_action="user.login_google",
+        audit_diff=google_ctx,
     )
     return TokenPair(access_token=access, refresh_token=refresh, expires_at=exp)
 
@@ -220,5 +237,7 @@ async def me(user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]) ->
         is_active=user.is_active,
         is_verified=user.is_verified,
         permissions=sorted(perms),
+        mfa_enabled=user.mfa_method is not None,
+        mfa_method=user.mfa_method,
         components=components,
     )

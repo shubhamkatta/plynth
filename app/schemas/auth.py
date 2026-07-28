@@ -77,6 +77,15 @@ class GoogleLoginRequest(BaseModel):
     # verify the `state` round-trip on its side before calling us.
 
 
+class MfaChallengeRequired(BaseModel):
+    """Returned by login when the user has MFA enabled. The client must
+    submit the code to POST /auth/mfa/verify with this token."""
+    mfa_required: bool = True
+    mfa_method: str
+    mfa_token: str
+    mfa_token_expires_at: datetime
+
+
 class MeResponse(BaseModel):
     id: UUID
     product_id: UUID
@@ -86,6 +95,8 @@ class MeResponse(BaseModel):
     is_active: bool
     is_verified: bool
     permissions: list[str]
+    mfa_enabled: bool
+    mfa_method: str | None = None
     # Map of active component code → whether the calling user has access.
     # Empty dict if the product has no components yet. Clients use this to
     # render conditionally without a second round-trip.

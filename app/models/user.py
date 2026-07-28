@@ -45,6 +45,8 @@ class User(
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mfa_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mfa_method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    mfa_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     tenant: Mapped[Tenant] = relationship(back_populates="users")
     role_bindings: Mapped[list[UserRole]] = relationship(

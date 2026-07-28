@@ -332,6 +332,13 @@ MIGRATIONS: list[tuple[str, str]] = [
           ON tenant_component_overrides (tenant_id, component_id)
         """,
     ),
+    (
+        "0012_mfa",
+        """
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_method VARCHAR(16) NULL;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled_at TIMESTAMPTZ NULL
+        """,
+    ),
 ]
 
 

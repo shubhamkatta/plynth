@@ -707,12 +707,18 @@ Grouped by typical Electron use case. Full bodies + headers in
 | --- | --- | --- |
 | Onboard new individual user | `POST /api/v1/auth/register-individual` | Derives slug; returns TokenPair |
 | Onboard a team / company | `POST /api/v1/auth/register` | Caller supplies tenant slug |
-| Log in | `POST /api/v1/auth/login` | |
+| Log in | `POST /api/v1/auth/login` | Returns `MfaChallengeRequired` if MFA enabled |
+| Complete MFA challenge | `POST /api/v1/auth/mfa/verify` | Submit code + `mfa_token` → TokenPair |
+| MFA status | `GET /api/v1/auth/mfa/status` | Auth required |
+| Set up TOTP authenticator | `POST /api/v1/auth/mfa/totp/setup` | Returns secret + provisioning URI |
+| Set up email OTP | `POST /api/v1/auth/mfa/email/setup` | Sends verification code to email |
+| Confirm MFA setup | `POST /api/v1/auth/mfa/confirm` | Verify code to enable MFA |
+| Disable MFA | `DELETE /api/v1/auth/mfa` | Requires valid MFA code |
 | Refresh tokens (transparent) | `POST /api/v1/auth/refresh` | Network-interceptor in main process |
 | Log out (current device) | `POST /api/v1/auth/logout` | Pass current refresh token |
 | Log out everywhere | `POST /api/v1/auth/logout` | `{ all_sessions: true }` |
 | Change password | `POST /api/v1/auth/password` | Revokes all refresh tokens |
-| Read current user / permissions | `GET /api/v1/auth/me` | Cache in app state |
+| Read current user / permissions | `GET /api/v1/auth/me` | Includes `mfa_enabled` + `mfa_method` |
 | Invite teammate (B2B / family B2C) | `POST /api/v1/users` | Needs `users:write` |
 | Manage teammates | `GET/PATCH/DELETE /api/v1/users` + `/users/{id}/activate\|deactivate` | |
 | Switch to child workspace | any route + `X-Acting-Tenant-Slug` header | `GET /tenants/children` lists options |
@@ -1485,7 +1491,9 @@ semver-ish discipline for that surface:
   404).
 - **JWT claims** (`sub`, `pid`, `tid`, `typ`, `iat`, `exp`, `jti`)
   are stable; new claims may be added but never removed without a
-  major bump.
+  major bump. The `typ` value `"mfa"` is reserved for short-lived MFA
+  challenge tokens (5-min TTL); these carry an extra `mfa` claim
+  indicating the method (`"totp"` or `"email"`).
 - **Per-product `settings` JSONB keys** (e.g.
   `settings.auth.refresh_ttl_days`, `settings.features.*`) follow the
   same additive policy. Renamed keys are dual-read for at least one

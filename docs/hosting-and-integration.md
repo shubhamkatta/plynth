@@ -7,7 +7,7 @@ runnable from the existing `docker-compose.yml`.
 
 | Tier | Provider | Cost / month | Notes |
 | --- | --- | --- | --- |
-| Free | **Fly.io** | $0–10 | Generous free tier: app + worker as separate machines; Postgres 1 GB; pair with **Upstash Redis** free (10k cmd/day). Scale-to-zero. Best zero-cost start. |
+| Cheap | **DigitalOcean droplet** | $6–8 | One $6/mo droplet runs the whole compose file + Caddy for auto-TLS + Backblaze B2 backups. Full step-by-step runbook: `docs/deploy-digitalocean.md`. |
 | Free | **Oracle Cloud "Always Free"** | $0 | 4 ARM cores + 24 GB RAM, forever. Run the whole compose file. Trust Oracle's free-tier longevity at your discretion. |
 | Cheap | **Hetzner CCX13** | €5.83 (~$6) | 2 vCPU dedicated / 8 GB / 80 GB SSD. Run everything in Docker on one box. Unbeatable price/perf in Europe. Add Backblaze B2 for `pg_dump` backups (~$0.005/GB/mo). |
 | Cheap | **Railway / Render** | $5–20 | Easier deploys from Dockerfile, managed Postgres, but pricier as you grow. |
@@ -60,7 +60,6 @@ but multi-product / multi-tenant in the app layer.
 ### Tradeoffs
 
 - **One box** is the cheapest but single point of failure. Suitable for early-stage SaaS; promote to managed Postgres + a second app box once revenue justifies it.
-- **Fly.io** auto-scale-to-zero is fantastic for products with bursty traffic — pay only for actual seconds of CPU. Cold start ~1s.
 - **RDS / Cloud SQL** are worth it the moment you need point-in-time recovery without scripting it yourself.
 
 ## Integration — how other products consume the platform

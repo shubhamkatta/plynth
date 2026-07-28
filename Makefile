@@ -47,18 +47,18 @@ fmt:
 typecheck:
 	mypy app
 
-# ---- Fly.io ---------------------------------------------------------------
-deploy: ## fly deploy (runs alembic upgrade head as release_command)
-	fly deploy
+# ---- Production (DigitalOcean droplet: docker-compose + Caddy) -------------
+# These targets run ON the droplet, from the repo root. Migrations and seeding
+# are separate targets — run `prod-migrate` (and `prod-seed` if needed) after
+# `deploy`. See docs/deploy-digitalocean.md.
+deploy: ## pull + rebuild the prod stack on the droplet (run migrate/seed separately)
+	git pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
-logs: ## tail fly logs (combined api + worker)
-	fly logs
-
-prod-shell: ## ssh into a running api machine
-	fly ssh console
+prod-shell: ## shell into the running api container on the droplet
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api /bin/bash
 
 prod-seed: ## seed default product + plans + admin against the prod DB
-	fly ssh console -C "python -m scripts.seed"
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api python -m scripts.seed
 
-prod-migrate: ## run alembic upgrade head manually (release_command does this on deploy)
-	fly ssh console -C "alembic upgrade head"
+prod-migrate: ## run alembic upgrade head against the prod DB
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api alembic upgrade head

@@ -1,4 +1,4 @@
-"""Mayva-scoped system role seeding (rbac.PRODUCT_SYSTEM_ROLES["mayva"]).
+"""Mayva-scoped system role seeding (rbac.PRODUCT_SYSTEM_ROLES["mayva-practice"]).
 
 Asserts the per-product staff roles seed under a `mayva`-slugged product with
 exactly their intended permission sets. In particular the `patient` role — an
@@ -25,21 +25,21 @@ from app.services import rbac
 
 
 async def _seed_mayva_roles() -> Product:
-    """Ensure a `mayva`-slugged product exists and (re)seed its system roles.
+    """Ensure a `mayva-practice`-slugged product exists and (re)seed its roles.
 
-    Slug must be exactly "mayva" for PRODUCT_SYSTEM_ROLES to apply. Products
-    are preserved across tests (CATALOG_TABLES) and `slug` is unique, so this
-    reuses the product if a prior test already created it — the seed itself is
-    idempotent.
+    Slug must be exactly "mayva-practice" for PRODUCT_SYSTEM_ROLES to apply.
+    Products are preserved across tests (CATALOG_TABLES) and `slug` is unique,
+    so this reuses the product if a prior test already created it — the seed
+    itself is idempotent.
     """
     async with session_scope() as db:
         with bypass_product(), bypass_tenant():
             product = await db.scalar(
-                select(Product).where(Product.slug == "mayva")
+                select(Product).where(Product.slug == "mayva-practice")
             )
             if product is None:
                 product = Product(
-                    name=f"Mayva Roles Test {uuid4().hex[:6]}", slug="mayva",
+                    name=f"Mayva Roles Test {uuid4().hex[:6]}", slug="mayva-practice",
                     status=ProductStatus.ACTIVE, is_active=True,
                 )
                 db.add(product)

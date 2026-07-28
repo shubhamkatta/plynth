@@ -1,4 +1,4 @@
-"""Acme-scoped system role seeding (rbac.PRODUCT_SYSTEM_ROLES["acme"]).
+"""Acme-scoped system role seeding (rbac.PRODUCT_SYSTEM_ROLES["acme-practice"]).
 
 Asserts the per-product staff roles seed under a `acme`-slugged product with
 exactly their intended permission sets. In particular the `patient` role — an
@@ -25,21 +25,21 @@ from app.services import rbac
 
 
 async def _seed_acme_roles() -> Product:
-    """Ensure a `acme`-slugged product exists and (re)seed its system roles.
+    """Ensure a `acme-practice`-slugged product exists and (re)seed its roles.
 
-    Slug must be exactly "acme" for PRODUCT_SYSTEM_ROLES to apply. Products
-    are preserved across tests (CATALOG_TABLES) and `slug` is unique, so this
-    reuses the product if a prior test already created it — the seed itself is
-    idempotent.
+    Slug must be exactly "acme-practice" for PRODUCT_SYSTEM_ROLES to apply.
+    Products are preserved across tests (CATALOG_TABLES) and `slug` is unique,
+    so this reuses the product if a prior test already created it — the seed
+    itself is idempotent.
     """
     async with session_scope() as db:
         with bypass_product(), bypass_tenant():
             product = await db.scalar(
-                select(Product).where(Product.slug == "acme")
+                select(Product).where(Product.slug == "acme-practice")
             )
             if product is None:
                 product = Product(
-                    name=f"Acme Roles Test {uuid4().hex[:6]}", slug="acme",
+                    name=f"Acme Roles Test {uuid4().hex[:6]}", slug="acme-practice",
                     status=ProductStatus.ACTIVE, is_active=True,
                 )
                 db.add(product)

@@ -112,7 +112,10 @@ SYSTEM_ROLES: dict[str, list[str]] = {
 # every product owner / admin / member). `owner` already grants `*:*`, so a
 # product template only needs its product-specific staff roles.
 PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
-    "acme": {
+    # The live Acme product is registered under slug "acme-practice"
+    # (the legacy "acme" product is an earlier Life·Work·Code version whose
+    # users must stay intact — its roles must NOT come from this template).
+    "acme-practice": {
         # Everything a therapist needs day-to-day; practice settings stay
         # with the owner.
         "practitioner": [

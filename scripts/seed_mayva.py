@@ -316,8 +316,7 @@ async def main() -> None:
                 # Self-contained bootstrap: the mayva-practice product is the
                 # therapist front-desk product, kept SEPARATE from the legacy
                 # 'mayva' product (whose old users must stay intact). Create it
-                # + its system roles here so this seed sets up a greenfield
-                # environment (local or prod) in one run.
+                # so this seed sets up a greenfield environment in one run.
                 product = Product(
                     name="Mayva Practice",
                     slug=PRODUCT_SLUG,
@@ -326,8 +325,11 @@ async def main() -> None:
                 )
                 db.add(product)
                 await db.flush()
-                await rbac.ensure_system_roles_for_product(db, product_id=product.id)
                 log.info("seed_mayva.product_created", slug=PRODUCT_SLUG)
+            # ALWAYS (idempotently) ensure system roles — not only on first
+            # creation. Re-running this seed against an ALREADY-EXISTING product
+            # is how newly-added roles (e.g. 'patient') reach production.
+            await rbac.ensure_system_roles_for_product(db, product_id=product.id)
             tenant = await db.scalar(
                 select(Tenant).where(
                     Tenant.product_id == product.id, Tenant.slug == DEV_TENANT_SLUG

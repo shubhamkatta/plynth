@@ -101,6 +101,5 @@ nav:
   - API reference: api-reference.md
   - Deployment:
       - Production checklist: deployment.md
-      - Fly.io: deploy-fly.md
       - DigitalOcean: deploy-digitalocean.md
       - Hosting + integration: hosting-and-integration.md

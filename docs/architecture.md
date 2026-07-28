@@ -15,7 +15,6 @@ Companion documents (focused references — cross-linked throughout):
 - `docs/billing.md` — subscription state machine
 - `docs/credits.md` — ledger model
 - `docs/deployment.md` — production checklist
-- `docs/deploy-fly.md` — Fly.io + Neon + Upstash runbook (generic)
 - `docs/deploy-digitalocean.md` — cheapest-prod runbook ($6 droplet + Caddy + B2 backups) on `api.example.com`
 - `docs/hosting-and-integration.md` — hosting tiers + platform-owner-facing integration patterns
 - `docs/postman_collection.json` — runnable API collection
@@ -74,7 +73,7 @@ hierarchy. The `type` marker is purely UX signalling for product clients.
                                  │
                                  ▼
    ┌─────────────────────────────────────────────────────────┐
-   │   Fly.io (or VPS) · gunicorn/uvicorn · FastAPI app      │
+   │   Droplet / VPS   · gunicorn/uvicorn · FastAPI app      │
    │                                                         │
    │   middleware ─→ deps ─→ routers ─→ services ─→ repos    │
    │       │           │         │           │         │     │
@@ -456,8 +455,8 @@ Wildcard matching: `*:*` ⊃ `users:*` ⊃ `users:read`. See `_matches` in
   `app/providers/notifications.send_email`, dedupes per (invoice, offset)
   with Redis `SETNX`.
 
-The worker must be **always-on** (`min_machines_running = 1` on Fly) so
-cron fires.
+The worker must be **always-on** (its own long-running container, e.g.
+`restart: unless-stopped` in `docker-compose.prod.yml`) so cron fires.
 
 ### 4.7 Error handling + audit
 
@@ -1433,7 +1432,7 @@ for the consent URL.
 | Multi-tenancy / act-as behavior | § 3.4, § 4.5 | `docs/multi-tenancy.md` |
 | Billing state machine | § 3.4, § 4.6 | `docs/billing.md` |
 | Credits semantics | § 3.4, § 4.6 | `docs/credits.md` |
-| Deployment recipe / stack | § 2, § 3.1 | `docs/deploy-fly.md`, `docs/deployment.md` |
+| Deployment recipe / stack | § 2, § 3.1 | `docs/deploy-digitalocean.md`, `docs/deployment.md` |
 
 **Workflow:**
 1. **Read** this doc before designing the change.

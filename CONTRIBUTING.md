@@ -13,7 +13,7 @@ First-time contributors are very welcome. Meaningful contributions span:
 - **Tests** — closing coverage gaps, especially cross-product / cross-tenant
   isolation tests.
 - **Bug fixes** — including the boring ones.
-- **Deploy recipes** — Fly.io, Render, Hetzner, bare-metal Caddy, etc.
+- **Deploy recipes** — DigitalOcean, Render, Hetzner, bare-metal Caddy, etc.
 - **Integrations** — new billing providers, notification providers, identity
   providers, storage backends.
 

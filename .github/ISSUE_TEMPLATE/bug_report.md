@@ -25,7 +25,7 @@ assignees: ''
 - OS (and version):
 - Python version:
 - Postgres version:
-- Deploy target (local / docker compose / Fly.io / other):
+- Deploy target (local / docker compose / DigitalOcean / other):
 - Electron version (if applicable):
 - Plynth branch / commit SHA:
 

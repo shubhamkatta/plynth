@@ -58,7 +58,7 @@ Electron loads it). First-launch flow:
 Switching API endpoint (e.g. local dev vs production):
 
 - **Settings → API endpoint**, paste `http://localhost:8000` (or your
-  Fly / DO URL), Save. All subsequent requests use it.
+  DigitalOcean URL), Save. All subsequent requests use it.
 
 ## Architecture (1-page)
 

@@ -112,7 +112,10 @@ SYSTEM_ROLES: dict[str, list[str]] = {
 # every product owner / admin / member). `owner` already grants `*:*`, so a
 # product template only needs its product-specific staff roles.
 PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
-    "mayva": {
+    # The live Mayva product is registered under slug "mayva-practice"
+    # (the legacy "mayva" product is an earlier Life·Work·Code version whose
+    # users must stay intact — its roles must NOT come from this template).
+    "mayva-practice": {
         # Everything a therapist needs day-to-day; practice settings stay
         # with the owner.
         "practitioner": [

@@ -156,23 +156,17 @@ async def register_individual(
     raise Conflict("could not derive a unique slug after retries (extreme bad luck)")
 
 
-async def login(
+async def verify_credentials(
     db: AsyncSession,
     *,
     product_id: UUID,
     email: str,
     password: str,
     tenant_slug: str | None,
-    user_agent: str | None = None,
     ip_address: str | None = None,
-) -> tuple[User, str, str, datetime]:
-    """Verify credentials, issue access + refresh tokens."""
+) -> User:
+    """Verify email/password credentials. Returns user on success."""
     with bypass_product(), bypass_tenant():
-        # Filter out soft-deleted rows: after a user is re-invited under the
-        # same email, two rows share (product_id, email) — one with
-        # deleted_at SET and is_active=False, one alive. Without this
-        # filter, db.scalar's row order is undefined and login can pick
-        # the dead row → "invalid credentials" on a correct password.
         stmt = (
             select(User)
             .join(Tenant, Tenant.id == User.tenant_id)
@@ -215,6 +209,19 @@ async def login(
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(password)
 
+    return user
+
+
+async def complete_login(
+    db: AsyncSession,
+    *,
+    user: User,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+    audit_action: str = "user.login",
+    audit_diff: dict[str, Any] | None = None,
+) -> tuple[User, str, str, datetime]:
+    """Issue access + refresh tokens, persist, update last_login_at, audit."""
     set_current_product(user.product_id)
     set_current_tenant(user.tenant_id)
     access_token, _, access_exp = issue_token(
@@ -239,10 +246,30 @@ async def login(
     user.last_login_at = datetime.now(UTC)
     await db.flush()
     await audit.record(
-        db, action="user.login", actor_user_id=user.id, resource_type="user",
-        resource_id=user.id, actor_ip=ip_address,
+        db, action=audit_action, actor_user_id=user.id, resource_type="user",
+        resource_id=user.id, actor_ip=ip_address, diff=audit_diff,
     )
     return user, access_token, refresh_token, access_exp
+
+
+async def login(
+    db: AsyncSession,
+    *,
+    product_id: UUID,
+    email: str,
+    password: str,
+    tenant_slug: str | None,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> tuple[User, str, str, datetime]:
+    """Verify credentials, issue access + refresh tokens."""
+    user = await verify_credentials(
+        db, product_id=product_id, email=email, password=password,
+        tenant_slug=tenant_slug, ip_address=ip_address,
+    )
+    return await complete_login(
+        db, user=user, user_agent=user_agent, ip_address=ip_address,
+    )
 
 
 async def refresh(
@@ -438,34 +465,15 @@ GOOGLE_TOKEN_URL    = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 
-async def login_with_google(
+async def verify_google_credentials(
     db: AsyncSession,
     *,
     product_id: UUID,
     code: str,
     redirect_uri: str,
-    user_agent: str | None = None,
     ip_address: str | None = None,
-) -> tuple[User, str, str, datetime]:
-    """OAuth2 authorization-code flow.
-
-    1. Exchange `code` with Google for an access token.
-    2. Fetch userinfo → email, name, sub.
-    3. Look up existing user in the product by email. If not found AND the
-       product opts in via `settings.features.google_auto_provision`,
-       auto-create a tenant + user (B2C-style, same shape as
-       register_individual). Otherwise 401 — admin must invite first.
-    4. Issue platform JWTs as if the user logged in normally.
-
-    Google client_id / client_secret resolution (in order):
-      1. ``ProductEnvVar`` rows ``GOOGLE_CLIENT_ID`` / ``GOOGLE_CLIENT_SECRET``
-         for this product — set via ``PUT /admin/products/{slug}/env/{KEY}``.
-      2. Platform-global ``settings.google_client_id`` / ``...secret``
-         (env vars on the API process). Back-compat fallback so existing
-         deployments keep working until they migrate to per-product vault.
-
-    If neither is set the call 401s with "not configured".
-    """
+) -> tuple[User, dict[str, Any]]:
+    """OAuth2 authorization-code verification. Returns (user, audit_context)."""
     import httpx
 
     from app.services import env_var as env_svc
@@ -490,10 +498,6 @@ async def login_with_google(
             "grant_type":    "authorization_code",
         })
         if token_resp.status_code != 200:
-            # TEMPORARY DIAGNOSTIC — Mayva oauth debugging 2026-06-02.
-            # Logs the full Google body + the redirect_uri Plynth forwarded
-            # + the client_id tail so we can diff against what Mayva sent
-            # to Google's /auth endpoint. Revert immediately after capture.
             log.warning(
                 "google.token_exchange_failed",
                 status=token_resp.status_code,
@@ -537,8 +541,6 @@ async def login_with_google(
         )
 
     if user is None:
-        # Auto-provision (B2C-style) if the product opts in. Otherwise the
-        # user must be invited via /users first.
         product = await db.get(__import__("app.models.product",
                                           fromlist=["Product"]).Product, product_id)
         features = (product.settings or {}).get("features", {}) if product else {}
@@ -548,33 +550,31 @@ async def login_with_google(
             db,
             product_id=product_id,
             email=email,
-            password=token_urlsafe(32),  # random — user logs in via Google
+            password=token_urlsafe(32),
             full_name=full_name,
         )
 
     if not user.is_active:
         raise Unauthorized("user inactive")
 
-    set_current_product(user.product_id)
-    set_current_tenant(user.tenant_id)
-    user.last_login_at = datetime.now(UTC)
-    access_token, _, access_exp = issue_token(
-        subject=user.id, tenant_id=user.tenant_id,
-        product_id=user.product_id, typ="access",
+    return user, {"google_sub": info.get("sub")}
+
+
+async def login_with_google(
+    db: AsyncSession,
+    *,
+    product_id: UUID,
+    code: str,
+    redirect_uri: str,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> tuple[User, str, str, datetime]:
+    """Full Google OAuth login = verify + complete."""
+    user, google_ctx = await verify_google_credentials(
+        db, product_id=product_id, code=code,
+        redirect_uri=redirect_uri, ip_address=ip_address,
     )
-    refresh_token, refresh_jti, refresh_exp = issue_token(
-        subject=user.id, tenant_id=user.tenant_id,
-        product_id=user.product_id, typ="refresh",
-        ttl_seconds=await _refresh_ttl_seconds(db, user.product_id),
+    return await complete_login(
+        db, user=user, user_agent=user_agent, ip_address=ip_address,
+        audit_action="user.login_google", audit_diff=google_ctx,
     )
-    db.add(RefreshToken(
-        product_id=user.product_id, user_id=user.id, jti=refresh_jti,
-        expires_at=refresh_exp, user_agent=user_agent, ip_address=ip_address,
-    ))
-    await audit.record(
-        db, action="user.login_google", actor_user_id=user.id, actor_ip=ip_address,
-        resource_type="user", resource_id=user.id,
-        tenant_id=user.tenant_id, product_id=user.product_id,
-        diff={"google_sub": info.get("sub")},
-    )
-    return user, access_token, refresh_token, access_exp

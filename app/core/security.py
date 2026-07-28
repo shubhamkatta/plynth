@@ -18,7 +18,7 @@ from app.core.config import settings
 
 _hasher = PasswordHasher()  # default params are OWASP-recommended
 
-TokenType = Literal["access", "refresh"]
+TokenType = Literal["access", "refresh", "mfa"]
 
 
 # --- passwords ---------------------------------------------------------------
@@ -41,12 +41,14 @@ def needs_rehash(hashed: str) -> bool:
 
 # --- jwt ---------------------------------------------------------------------
 
+MFA_CHALLENGE_TTL_SECONDS = 300
+
 def _ttl(typ: TokenType) -> int:
-    return (
-        settings.jwt_access_ttl_seconds
-        if typ == "access"
-        else settings.jwt_refresh_ttl_seconds
-    )
+    if typ == "access":
+        return settings.jwt_access_ttl_seconds
+    if typ == "mfa":
+        return MFA_CHALLENGE_TTL_SECONDS
+    return settings.jwt_refresh_ttl_seconds
 
 
 def issue_token(

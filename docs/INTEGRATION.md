@@ -33,7 +33,7 @@ Ask once, store as configuration in your product:
 
 ## 1. What the platform handles (don't reimplement)
 
-- **Identity** — sign-up, sign-in, password hashing (Argon2id), JWT issue/refresh, server-side refresh-token revocation, password change.
+- **Identity** — sign-up, sign-in, password hashing (Argon2id), JWT issue/refresh, server-side refresh-token revocation, password change, **MFA** (TOTP authenticator app or email OTP).
 - **Tenancy** — every account lives in a `Tenant` (B2B "company" or B2C "individual"). Parent → child tenants with role-gated context switching.
 - **RBAC + IAM** — `resource:action` permissions, system roles (owner/admin/member) per product, custom roles with optional per-child scope.
 - **Plans & subscriptions** — catalog, trial → active → past-due → grace → suspended → cancelled, upgrade/downgrade with proration.
@@ -109,6 +109,30 @@ Content-Type: application/json
 }
 → 200 { access_token, refresh_token, expires_at }
 ```
+
+**MFA branch:** If the user has MFA enabled, login returns an
+`MfaChallengeRequired` response instead of a `TokenPair`:
+
+```json
+{
+  "mfa_required": true,
+  "mfa_method": "totp",
+  "mfa_token": "eyJ...",
+  "mfa_token_expires_at": "2026-07-28T12:05:00Z"
+}
+```
+
+Complete the login by verifying the MFA code:
+
+```http
+POST /api/v1/auth/mfa/verify
+Content-Type: application/json
+
+{ "mfa_token": "<token from above>", "code": "123456" }
+→ 200 { access_token, refresh_token, expires_at }
+```
+
+The same MFA branch applies to `POST /api/v1/auth/google` (OAuth2 login).
 
 ### 3.3 Token storage
 
@@ -221,6 +245,12 @@ Anchored to UI actions, not REST verbs. Full request bodies in
 | Reset password (consume token) | `POST /api/v1/auth/password/reset` `{token, new_password}` — single-use, expires in 1 hour. Revokes every existing refresh token. |
 | Sign in with Google (OAuth2) | `POST /api/v1/auth/google` `{code, redirect_uri}` — you run the redirect dance on your side, then forward the `code` here. Returns `TokenPair`. New users are rejected unless the product opts in to `settings.features.google_auto_provision = true` (then a B2C-style tenant is created on first login). Platform-wide config: `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` env vars; unset → 401 "not configured". |
 | Read current user + permissions | `GET /api/v1/auth/me` |
+| Check MFA status | `GET /api/v1/auth/mfa/status` |
+| Set up TOTP authenticator | `POST /api/v1/auth/mfa/totp/setup` — returns `{secret, provisioning_uri}`. Show the URI as a QR code for the user's authenticator app. |
+| Set up email OTP | `POST /api/v1/auth/mfa/email/setup` — sends a 6-digit code to the user's email. |
+| Confirm MFA setup | `POST /api/v1/auth/mfa/confirm` `{method, code}` — verifies the setup code and enables MFA. |
+| Complete MFA login | `POST /api/v1/auth/mfa/verify` `{mfa_token, code}` — unauthenticated; accepts the challenge token from login + the 6-digit code, returns `TokenPair`. |
+| Disable MFA | `DELETE /api/v1/auth/mfa` `{code}` — requires a valid current MFA code to disable. |
 
 ### 6.2 Subscriptions & plans
 
@@ -425,6 +455,28 @@ export async function signUp(email: string, password: string, fullName?: string)
   await saveTokens(tokens);
 }
 
+export async function signIn(
+  email: string, password: string, tenantSlug?: string,
+): Promise<{ mfaRequired: false } | { mfaRequired: true; mfaMethod: string; mfaToken: string }> {
+  const body: Record<string, string> = { email, password };
+  if (tenantSlug) body.tenant_slug = tenantSlug;
+  const res = await api<any>("/api/v1/auth/login", {
+    method: "POST", body: JSON.stringify(body), skipAuth: true,
+  });
+  if (res.mfa_required) {
+    return { mfaRequired: true, mfaMethod: res.mfa_method, mfaToken: res.mfa_token };
+  }
+  await saveTokens(res);
+  return { mfaRequired: false };
+}
+
+export async function verifyMfa(mfaToken: string, code: string) {
+  const tokens = await api<Tokens>("/api/v1/auth/mfa/verify", {
+    method: "POST", body: JSON.stringify({ mfa_token: mfaToken, code }), skipAuth: true,
+  });
+  await saveTokens(tokens);
+}
+
 export async function consumeCredits(featureKey: string, amount: string) {
   return api("/api/v1/credits/consume", {
     method:         "POST",
@@ -497,8 +549,15 @@ class Platform:
 
 # Usage
 p = Platform()
-p.call("POST", "/api/v1/auth/login", auth=False,
-       json_body={"email": "...", "password": "..."})
+res = p.call("POST", "/api/v1/auth/login", auth=False,
+             json_body={"email": "...", "password": "..."})
+if res.get("mfa_required"):
+    code = input("MFA code: ")
+    tokens = p.call("POST", "/api/v1/auth/mfa/verify", auth=False,
+                    json_body={"mfa_token": res["mfa_token"], "code": code})
+    save_tokens(tokens)
+else:
+    save_tokens(res)
 p.call("POST", "/api/v1/credits/consume",
        idem=str(uuid.uuid4()),
        json_body={"feature_key":"credits.ai_completion","amount":"1","reference":str(uuid.uuid4())})
@@ -943,5 +1002,6 @@ is always current — use it as a tiebreaker.
 - `2026-05-19` — multi-product platform live (`X-Product-Slug` header introduced).
 - `2026-05-18` — parent → child act-as via `X-Acting-Tenant-Slug` shipped.
 - `2026-05-19` — B2C `/auth/register-individual` shipped (`Tenant.type=individual`).
+- `2026-07-28` — MFA shipped (TOTP + email OTP). Login/Google-login now return `MfaChallengeRequired` when MFA is enabled; complete via `POST /auth/mfa/verify`.
 - (future) Jobs API — to be linked here when shipped.
 - (future) Storage API — to be linked here when shipped.

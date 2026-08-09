@@ -315,6 +315,127 @@
       ]
     },
     {
+      "name": "MFA",
+      "description": "Multi-factor authentication management. Setup, confirm, verify (during login), and disable. TOTP (authenticator app) and email OTP are supported.",
+      "item": [
+        {
+          "name": "MFA Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/status",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "mfa", "status"]
+            }
+          }
+        },
+        {
+          "name": "Setup TOTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/totp/setup",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "mfa", "totp", "setup"]
+            },
+            "description": "Generates a TOTP secret and provisioning URI. Show the URI as a QR code. MFA is NOT active until Confirm is called."
+          }
+        },
+        {
+          "name": "Setup Email OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/email/setup",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "mfa", "email", "setup"]
+            },
+            "description": "Sends a 6-digit OTP to the user's email. MFA is NOT active until Confirm is called."
+          }
+        },
+        {
+          "name": "Confirm MFA Setup",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"totp\",\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/confirm",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "mfa", "confirm"]
+            },
+            "description": "Verifies the setup code and enables MFA. method is 'totp' or 'email'."
+          }
+        },
+        {
+          "name": "Verify MFA (login challenge)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "  pm.collectionVariables.set('accessToken',  json.access_token);",
+                  "  pm.collectionVariables.set('refreshToken', json.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": { "type": "noauth" },
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mfa_token\": \"<paste mfa_token from login response>\",\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa/verify",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "mfa", "verify"]
+            },
+            "description": "Completes an MFA-gated login. Accepts the mfa_token from the login response and a 6-digit code. Returns a TokenPair. No auth header needed."
+          }
+        },
+        {
+          "name": "Disable MFA",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Product-Slug", "value": "{{productSlug}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/mfa",
+              "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "mfa"]
+            },
+            "description": "Disables MFA. Requires a valid current MFA code to confirm."
+          }
+        }
+      ]
+    },
+    {
       "name": "Tenants",
       "item": [
         {

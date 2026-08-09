@@ -74,6 +74,10 @@ Access + refresh tokens carry:
 }
 ```
 
+MFA challenge tokens use `"typ": "mfa"` with an extra `"mfa"` claim
+(`"totp"` or `"email"`). They have a 5-minute TTL and are only valid
+for `POST /auth/mfa/verify`.
+
 `pid` is required for any authenticated request to succeed.
 
 ## Bootstrapping a new product

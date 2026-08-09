@@ -126,6 +126,7 @@ The same FastAPI process handles every product. Tenant + product context is set 
 ### Identity
 - Email + password sign-up and sign-in, JWT access + refresh with server-side
   revocation, Argon2id hashing.
+- **MFA** — optional per-user, two methods: TOTP authenticator app or email OTP.
 - Forgot-password and reset (single-use token), password change, `/me`.
 - Google OAuth2 login with per-product auto-provisioning toggle.
 

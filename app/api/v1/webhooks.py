@@ -16,7 +16,7 @@ Error handling rules:
 """
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, Header, Request, status
@@ -34,6 +34,27 @@ from app.services import billing as billing_svc
 
 router = APIRouter()
 log = structlog.get_logger("webhook")
+
+# Razorpay subscription lifecycle events that mean "this subscription is now
+# authorized/paid → grant access". `authenticated` = mandate authorized,
+# `activated` = subscription live, `charged` = a cycle was successfully billed.
+_SUBSCRIPTION_ACTIVE_EVENTS = frozenset(
+    {"subscription.activated", "subscription.charged", "subscription.authenticated"}
+)
+
+
+def _extract_provider_subscription_id(data: dict[str, Any]) -> str | None:
+    """Pull the provider subscription id out of a webhook payload across the
+    two shapes we see: Razorpay nests the entity
+    (``{"subscription": {"entity": {"id": ...}}}``) while Stripe-style/invoice
+    events carry it as a flat string (``{"subscription": "sub_..."}``)."""
+    sub = data.get("subscription")
+    if isinstance(sub, dict):
+        entity = sub.get("entity") or {}
+        return entity.get("id")
+    if isinstance(sub, str):
+        return sub
+    return data.get("subscription_id") or data.get("id")
 
 
 @router.post("/billing", status_code=status.HTTP_200_OK)
@@ -122,6 +143,29 @@ async def billing_webhook(
                 diff={"event_id": event.id, "provider": provider.name,
                       "attempt": inv.attempt_count},
             )
+        elif event.type in _SUBSCRIPTION_ACTIVE_EVENTS:
+            # Razorpay subscription lifecycle: the customer authorized + paid on
+            # the hosted checkout page (short_url) and Razorpay confirms back
+            # here. Find the subscription by provider id and mark it ACTIVE.
+            provider_sub_id = _extract_provider_subscription_id(event.data)
+            sub = await db.scalar(
+                select(Subscription).where(
+                    Subscription.provider_subscription_id == provider_sub_id
+                )
+            )
+            if sub is None:
+                log.warning("webhook.subscription_missing", event_id=event.id,
+                            provider_sub=provider_sub_id)
+                return JSONResponse({"received": "true"}, status_code=200)
+            set_current_product(sub.product_id)
+            await billing_svc.handle_subscription_activated(db, subscription_id=sub.id)
+            await audit.record(
+                db, action="webhook.subscription_activated",
+                resource_type="subscription", resource_id=sub.id,
+                tenant_id=sub.tenant_id, product_id=sub.product_id,
+                diff={"event_id": event.id, "type": event.type, "provider": provider.name},
+            )
+
         else:
             log.info("webhook.ignored", event_id=event.id, type=event.type)
 

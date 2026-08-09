@@ -84,6 +84,27 @@ async def handle_payment_failed(db: AsyncSession, *, invoice_id: UUID) -> None:
                 )
 
 
+async def handle_subscription_activated(db: AsyncSession, *, subscription_id: UUID) -> None:
+    """Provider notified us a subscription is now authorized/paid/active
+    (Razorpay ``subscription.activated`` / ``.charged`` / ``.authenticated``).
+
+    Flip it to ACTIVE and clear any grace window. Mirrors
+    ``handle_payment_succeeded`` but is keyed off the subscription lifecycle
+    rather than an invoice — this is how a checkout redirect (where the first
+    charge happens on Razorpay's hosted page) confirms back to us. No-op if the
+    subscription is already ACTIVE (idempotent under provider retries)."""
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None:
+        return
+    if sub.status != SubscriptionStatus.ACTIVE:
+        sub.status = SubscriptionStatus.ACTIVE
+        sub.grace_ends_at = None
+        await audit.record(
+            db, action="subscription.reactivated", resource_type="subscription",
+            resource_id=sub.id, tenant_id=sub.tenant_id, product_id=sub.product_id,
+        )
+
+
 async def handle_payment_succeeded(db: AsyncSession, *, invoice_id: UUID) -> None:
     inv = await db.get(Invoice, invoice_id)
     if inv is None:

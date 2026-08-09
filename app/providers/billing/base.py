@@ -21,6 +21,10 @@ class ProviderSubscription:
     current_period_start: datetime
     current_period_end: datetime
     cancel_at_period_end: bool
+    # Hosted authorization/checkout URL the customer is redirected to in order
+    # to authorize + pay (Razorpay subscriptions return this as `short_url` on
+    # create). None for providers/paths that don't produce a redirect.
+    authorization_url: str | None = None
 
 
 @dataclass(slots=True)

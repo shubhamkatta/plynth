@@ -166,6 +166,12 @@ The response is a **`TokenPair`** envelope:
 - **`expires_in`** is seconds until the access token expires — use it
   to schedule the refresh.
 
+!!! note "MFA-enabled accounts"
+    If the user has MFA enabled, login returns
+    `{ mfa_required: true, mfa_method, mfa_token, mfa_token_expires_at }`
+    instead of a `TokenPair`. Complete the login by posting the MFA code
+    to `POST /api/v1/auth/mfa/verify { mfa_token, code }`.
+
 Use it immediately to fetch your own profile:
 
 ```bash

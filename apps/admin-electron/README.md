@@ -118,7 +118,9 @@ errors are flattened into a single readable string.
 - **User session**: `POST /auth/login` (with `X-Product-Slug`); access +
   refresh tokens persisted in keychain; expired access tokens are
   refreshed transparently inside `call<T>()` once per request before
-  re-throwing 401.
+  re-throwing 401. If the user has MFA enabled, login returns an
+  `MfaChallengeRequired` response — the client must prompt for a code
+  and call `POST /auth/mfa/verify` to complete login.
 - **Platform admin token**: stored as a separate keychain entry; calls
   marked `asPlatformAdmin: true` inject `X-Platform-Admin-Token` and
   skip the user `Authorization` header.

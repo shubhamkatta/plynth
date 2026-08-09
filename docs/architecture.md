@@ -130,7 +130,7 @@ hierarchy. The `type` marker is purely UX signalling for product clients.
       - verifies header (if present) matches token,
       - optionally consumes `X-Acting-Tenant-Slug` → validates hierarchy + config gates + RBAC → sets `current_tenant_id` to child + `acting_from_tenant_id` to home.
    5. `require_permission("resource:action")` evaluates against the **effective** tenant scope.
-4. **Service** runs business logic; **Repository** (`TenantRepository`) auto-applies `WHERE product_id = :pid AND tenant_id = :tid`.
+4. **Service** runs business logic; **Repository** (`TenantRepository`) auto-applies `WHERE product_id = :pid AND tenant_id = :tid`. MFA verification (`POST /auth/mfa/verify`) is unauthenticated — it decodes a short-lived MFA challenge token (`typ: "mfa"`) instead of a standard access token.
 5. **Commit** on clean exit; **rollback** on raise.
 6. **Global exception handlers** convert any exception to `{code, message, details}` JSON + structured log at the right severity.
 
@@ -175,13 +175,28 @@ client → POST /auth/login
         + X-Product-Slug
         body: { email, password, tenant_slug? }
 
-auth.login
+auth.verify_credentials
   SELECT user WHERE email + product_id (+ tenant_slug)
   verify_password (Argon2id)
   on bad password → _audit_in_new_tx(user.login_failed) → 401
-  on success     → issue access + refresh tokens
-                   record RefreshToken (jti)
-                   audit(user.login)
+
+if user.mfa_method:
+  mfa.create_challenge
+    issue MFA JWT (typ="mfa", mfa=<method>, 5-min TTL)
+    if method == email → send OTP to user's email
+  client ← MfaChallengeRequired { mfa_required, mfa_method, mfa_token, mfa_token_expires_at }
+
+  client → POST /auth/mfa/verify  { mfa_token, code }
+  mfa.verify_challenge
+    decode MFA token → user_id
+    verify TOTP or email OTP
+    auth.complete_login → issue access + refresh tokens
+
+else:
+  auth.complete_login
+    issue access + refresh tokens
+    record RefreshToken (jti)
+    audit(user.login)
 
 client ← TokenPair
 ```
@@ -302,6 +317,7 @@ app/
     idempotency.py                 IdempotencyKey
 
   schemas/                         Pydantic request/response DTOs (1 file per resource)
+    mfa.py                         MFA setup/confirm/verify/disable DTOs
 
   repositories/
     base.py                        TenantRepository — auto dual filter
@@ -315,7 +331,12 @@ app/
     product.py                     CRUD + slug→id Redis-cached resolver
     user.py                        invite · activate · soft_delete
     auth.py                        register · register_individual · login ·
-                                   refresh · logout · change_password
+                                   refresh · logout · change_password ·
+                                   verify_credentials · complete_login ·
+                                   verify_google_credentials
+    mfa.py                         setup_totp · setup_email · confirm_setup ·
+                                   create_challenge · verify_challenge ·
+                                   disable_mfa
     plan.py                        catalog CRUD
     subscription.py                start_trial · purchase · change_plan ·
                                    cancel · grace · suspend sweep
@@ -334,7 +355,10 @@ app/
   api/v1/
     router.py                      include_router(...)
     auth.py                        register · register-individual · login ·
-                                   refresh · logout · password · me
+                                   refresh · logout · password · me ·
+                                   google (OAuth2)
+    mfa.py                         status · totp/setup · email/setup ·
+                                   confirm · verify · disable
     tenants.py                     list · create-child · update · activate ·
                                    deactivate · children (act-as discovery)
     users.py                       list · invite · update · activate ·
@@ -378,7 +402,7 @@ stable constraint names.
 | --- | --- | --- |
 | `products` | `slug`, `status`, `settings JSONB` | `uq_products_slug`. `settings.features.allow_parent_child_access` defaults true. |
 | `tenants` | `product_id`, `slug`, `parent_id`, `is_root`, `type`, `status`, `settings JSONB` | `uq_tenants_product_slug`. `type ∈ {company, individual}`. `settings.allow_child_access` defaults true. |
-| `users` | `product_id`, `tenant_id`, `email`, `password_hash`, `is_active`, `is_verified` | `uq_users_tenant_email`. Argon2id hash. |
+| `users` | `product_id`, `tenant_id`, `email`, `password_hash`, `is_active`, `is_verified`, `mfa_secret NULL`, `mfa_method NULL`, `mfa_enabled_at NULL` | `uq_users_tenant_email`. Argon2id hash. `mfa_method ∈ {totp, email}`. |
 | `refresh_tokens` | `product_id`, `user_id`, `jti`, `expires_at`, `revoked_at` | `uq_refresh_tokens_jti`. Revoked on logout / password-change. |
 | `permissions` | `code`, `description` | **GLOBAL** (no product_id). `uq_permissions_code`. |
 | `roles` | `product_id`, `tenant_id NULL`, `name`, `is_system` | `uq_roles_product_tenant_name`. `tenant_id NULL` = system role (owner / admin / member). |
@@ -1384,6 +1408,7 @@ for the consent URL.
 
 - Passwords: Argon2id via `argon2-cffi`. OWASP-recommended.
 - JWT: HS256 with `JWT_SECRET ≥ 32 bytes`. Tokens carry `pid` + `tid`.
+- MFA: optional per-user, two methods — **TOTP** (authenticator app, `pyotp`, ±1 window tolerance) and **email OTP** (6-digit code, SHA-256 hashed in Redis, 5-min TTL, 60-sec cooldown, constant-time comparison via `hmac.compare_digest`). MFA challenge tokens are short-lived JWTs (`typ: "mfa"`, 5-min TTL). Failed verification is audited (`user.mfa_verify_failed`).
 - Refresh tokens: server-tracked (`refresh_tokens` table) → revocable on logout / password change.
 - Idempotency: `Idempotency-Key` header on every mutating billing/credit/jobs call. Persisted in `idempotency_keys`.
 - Webhook signature: provider-verified (`provider.parse_webhook`); failures return **400** so providers stop retrying.

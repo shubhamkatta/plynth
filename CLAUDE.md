@@ -83,6 +83,15 @@ See `.claude/skills/*/SKILL.md` for the full text.
   `current_tenant_id() or user.tenant_id` — never `user.tenant_id`
   alone. `audit_log.acting_from_tenant_id` is auto-populated.
 
+## MFA
+
+- Optional per-user. Two methods: `totp` (authenticator app) and `email` (OTP).
+- Service in `app/services/mfa.py`, routes in `app/api/v1/mfa.py`,
+  schemas in `app/schemas/mfa.py`.
+- Login/Google-login return `MfaChallengeRequired` when MFA is enabled;
+  complete via `POST /auth/mfa/verify`.
+- Email OTP stored as SHA-256 hash in Redis (`mfa:otp:{user_id}`, 5-min TTL).
+
 ## RBAC
 
 - Permissions: `resource:action` global codes, wildcards `*:*` and

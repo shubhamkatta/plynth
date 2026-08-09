@@ -105,9 +105,12 @@ def test_plan_catalog_has_monthly_and_annual_cadence_per_paid_tier() -> None:
         assert monthly["is_public"] is True
         assert annual["is_public"] is True
 
-        # Provider refs start empty — real Razorpay plan_ids are filled later
-        # (a SEPARATE annual plan_id encodes the annual billing period).
-        assert annual.get("provider_refs") == {}
+        # Each cadence carries its OWN live Razorpay plan_id (a separate annual
+        # plan_id encodes the annual billing period). Monthly and annual must
+        # point at DIFFERENT plans.
+        assert monthly["provider_refs"]["razorpay"].startswith("plan_")
+        assert annual["provider_refs"]["razorpay"].startswith("plan_")
+        assert monthly["provider_refs"]["razorpay"] != annual["provider_refs"]["razorpay"]
 
 
 def test_component_plan_gating_spec() -> None:
@@ -252,15 +255,16 @@ async def test_seed_creates_monthly_and_annual_plan_rows() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reseed_does_not_clobber_annual_provider_refs() -> None:
-    """A real Razorpay annual plan_id set out-of-band (or by a prior seed) must
-    survive a re-seed — the empty `{}` placeholder in the spec must never
-    overwrite it (mirrors the monthly merge behaviour)."""
+async def test_reseed_applies_seed_razorpay_id_but_preserves_other_providers() -> None:
+    """The seed is the source of truth for the `razorpay` plan_id (it now ships
+    the real live ids), so a re-seed re-applies it. But a DIFFERENT provider key
+    set out-of-band (e.g. a Stripe price) must survive the merge — the seed only
+    overwrites the keys it carries, never wipes the whole dict."""
     product, _tenant, _user = await _bootstrap_mayva_product()
 
-    # Simulate ops setting the real annual Razorpay plan_id in prod.
     from sqlalchemy import select
 
+    # Simulate ops adding a Stripe ref out-of-band, and a stale razorpay id.
     async with session_scope() as db:
         with bypass_product(), bypass_tenant():
             annual = await db.scalar(
@@ -268,11 +272,14 @@ async def test_reseed_does_not_clobber_annual_provider_refs() -> None:
                     Plan.product_id == product.id, Plan.code == "practice_yearly"
                 )
             )
-            annual.provider_refs = {"razorpay": "plan_ANNUAL_REAL"}
+            annual.provider_refs = {"razorpay": "plan_STALE", "stripe": "price_KEEP"}
 
-    # Re-seed (spec carries provider_refs={} for practice_yearly).
     async with session_scope() as db:
         await seed_mayva._ensure_plans(db, product.id)
 
     plans = await _plans_by_code(product.id)
-    assert plans["practice_yearly"].provider_refs == {"razorpay": "plan_ANNUAL_REAL"}
+    refs = plans["practice_yearly"].provider_refs
+    # Seed's canonical razorpay id wins over the stale one...
+    assert refs["razorpay"] == "plan_TNZwhu3TVqwUBX"
+    # ...but the unrelated Stripe key is preserved.
+    assert refs["stripe"] == "price_KEEP"

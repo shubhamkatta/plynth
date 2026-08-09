@@ -107,7 +107,7 @@ PLANS: list[dict] = [
         "is_public": True,
         # No AI on Essentials — 0 documents the intent (no wallet is created).
         "ai_messages": Decimal("0"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (monthly)
+        "provider_refs": {"razorpay": "plan_TNZwgF5fQwPTPO"},  # live monthly
     },
     {
         "code": "essentials_yearly",
@@ -118,7 +118,7 @@ PLANS: list[dict] = [
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("0"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (ANNUAL plan_id)
+        "provider_refs": {"razorpay": "plan_TNZwhTa4K96xZF"},  # live annual
     },
     {
         "code": "practice",
@@ -129,7 +129,7 @@ PLANS: list[dict] = [
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("500"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (monthly)
+        "provider_refs": {"razorpay": "plan_TNZwgi92BT1iCQ"},  # live monthly
     },
     {
         "code": "practice_yearly",
@@ -140,7 +140,7 @@ PLANS: list[dict] = [
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("500"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (ANNUAL plan_id)
+        "provider_refs": {"razorpay": "plan_TNZwhu3TVqwUBX"},  # live annual
     },
     {
         "code": "concierge",
@@ -151,7 +151,7 @@ PLANS: list[dict] = [
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("2000"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (monthly)
+        "provider_refs": {"razorpay": "plan_TNZwh4slGhczxl"},  # live monthly
     },
     {
         "code": "concierge_yearly",
@@ -162,7 +162,7 @@ PLANS: list[dict] = [
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("2000"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (ANNUAL plan_id)
+        "provider_refs": {"razorpay": "plan_TNZwiM5Lygue7N"},  # live annual
     },
     {
         "code": "clinic",

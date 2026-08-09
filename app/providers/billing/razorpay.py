@@ -113,11 +113,13 @@ class RazorpayBillingProvider(BillingProvider):
             "customer_notify": 1,
         }
         if trial_days:
+            # Defer the first charge: the mandate is authorized on the hosted
+            # page now, but Razorpay only raises the first invoice at `start_at`.
             body["start_at"] = int(datetime.now(UTC).timestamp()) + trial_days * 86400
         data = await self._request(
             "POST", "/subscriptions", json_body=body, idempotency_key=idempotency_key
         )
-        return self._sub(data)
+        return self._sub(data, trial_days=trial_days)
 
     async def change_subscription(
         self,
@@ -179,7 +181,7 @@ class RazorpayBillingProvider(BillingProvider):
         )
 
     @staticmethod
-    def _sub(sub: dict[str, Any]) -> ProviderSubscription:
+    def _sub(sub: dict[str, Any], *, trial_days: int = 0) -> ProviderSubscription:
         # Razorpay statuses: created/authenticated/active/paused/halted/
         # cancelled/completed/expired. current_start/end are epoch seconds.
         return ProviderSubscription(
@@ -194,4 +196,7 @@ class RazorpayBillingProvider(BillingProvider):
             # subscription create — this is the redirect URL the customer uses
             # to authorize the mandate + pay.
             authorization_url=sub.get("short_url"),
+            # Echo the trial we requested (Razorpay's response has no dedicated
+            # field for it — it's encoded as `start_at`).
+            trial_days=trial_days,
         )

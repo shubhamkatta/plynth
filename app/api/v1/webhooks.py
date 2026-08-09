@@ -35,11 +35,14 @@ from app.services import billing as billing_svc
 router = APIRouter()
 log = structlog.get_logger("webhook")
 
-# Razorpay subscription lifecycle events that mean "this subscription is now
-# authorized/paid → grant access". `authenticated` = mandate authorized,
+# Razorpay subscription lifecycle events that flip a subscription to ACTIVE.
 # `activated` = subscription live, `charged` = a cycle was successfully billed.
+# `subscription.authenticated` (mandate authorized, fires DURING the trial before
+# any money moves) is deliberately excluded: on a card-on-file trial it would
+# flip the status label TRIAL → ACTIVE before the first charge. Access is granted
+# under TRIAL anyway, so the label stays honest until the first real charge.
 _SUBSCRIPTION_ACTIVE_EVENTS = frozenset(
-    {"subscription.activated", "subscription.charged", "subscription.authenticated"}
+    {"subscription.activated", "subscription.charged"}
 )
 
 

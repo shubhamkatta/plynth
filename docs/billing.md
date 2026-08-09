@@ -29,6 +29,41 @@
 
 `Subscription.has_access` returns True for trial, active, past_due, grace.
 
+## Free trial (card-on-file / UPI-AutoPay mandate)
+
+Paid signup is a **mandate-first free trial**: at checkout the customer
+authorizes a recurring mandate (card or UPI-AutoPay on Razorpay's hosted
+`short_url`) but is **not charged**. The first deduction happens automatically
+at trial end.
+
+`subscription.purchase` (used by both `/subscription/purchase` and
+`/billing/checkout`) implements this:
+
+- **Free/$0 plan** → no mandate, no charge; subscription is `active` immediately
+  (`trial_days=0`).
+- **Paid plan** → the provider subscription is created with a **future
+  `start_at`** (the neutral `trial_days` arg; Razorpay `start_at = now +
+  trial_days*86400`). Local status stays `trial` with `trial_end = start_at`;
+  the `subscription.charged/activated` webhook flips it to `active` after the
+  first charge lands.
+
+`trial_days` is derived from the plan (`plan.trial_days`, else
+`settings.default_trial_days` = 14). **Single-trial reconciliation:** if
+`register → start_trial` already opened a local trial, `purchase` defers the
+first charge to that **existing** `trial_end` (remaining days) instead of
+stacking a second 14-day trial — the customer sees one ~14-day trial and is
+charged once, after it.
+
+Timeline (paid register → checkout):
+
+```
+register (t0)       → local trial, trial_end = t0 + 14d
+checkout (t0..t1)   → Razorpay sub, start_at = trial_end (mandate authorized,
+                      NOT charged); local stays trial, provider ids attached
+trial_end (~t0+14d) → Razorpay raises the first invoice, charges ONCE →
+                      subscription.charged webhook → active
+```
+
 ## Upgrade / downgrade
 
 `POST /subscription/change { plan_code, proration }`:

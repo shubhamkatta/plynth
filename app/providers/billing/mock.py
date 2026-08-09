@@ -32,17 +32,23 @@ class MockBillingProvider(BillingProvider):
     ) -> ProviderSubscription:
         now = datetime.now(UTC)
         sub_id = f"mock_sub_{uuid4().hex[:12]}"
+        # Mirror Razorpay's deferred-charge semantics: when trial_days > 0 the
+        # first billing period (the first charge) starts at the trial end, not
+        # now. `current_period_start` therefore stands in for Razorpay's
+        # `start_at` and lets tests assert the charge was deferred.
+        first_charge_at = now + timedelta(days=trial_days)
         sub = ProviderSubscription(
             id=sub_id,
             customer_id=customer_id,
             price_id=price_id,
             status="trialing" if trial_days else "active",
-            current_period_start=now,
-            current_period_end=now + timedelta(days=30),
+            current_period_start=first_charge_at,
+            current_period_end=first_charge_at + timedelta(days=30),
             cancel_at_period_end=False,
             # Stand-in for Razorpay's hosted `short_url` so the checkout flow
             # (POST /billing/checkout) can be exercised end-to-end in tests/dev.
             authorization_url=f"https://mock-billing.local/checkout/{sub_id}",
+            trial_days=trial_days,
         )
         self._subscriptions[sub.id] = sub
         return sub

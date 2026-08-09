@@ -62,6 +62,20 @@ AI_FEATURE_KEY = "ai_messages"
 # Plan catalog. Prices are per-region on the marketing site; plynth stores a
 # single default (USD cents). Per-region plan variants are NOT modelled here
 # (see the flag in the handoff report).
+#
+# Paid plans run a 14-day card-on-file / UPI-AutoPay-mandate free trial:
+# `trial_days=14` + a monthly `interval` mean the customer authorizes a
+# recurring mandate at checkout, is NOT charged during the trial, and the first
+# deduction lands after 14 days (see app/services/subscription.py::purchase).
+#
+# TODO(billing): `provider_refs` maps a provider name → its plan id (Razorpay
+# `plan_id`). It MUST be populated with the real Razorpay plan_ids created in
+# the Razorpay dashboard before checkout works against the live provider —
+# `subscription.purchase` raises ValidationFailed for a paid plan with no
+# razorpay ref. It is intentionally left EMPTY here: do NOT invent fake
+# plan_ids (Razorpay rejects an unknown plan_id at subscription create). Fill
+# each paid plan's ref in below, e.g. "provider_refs": {"razorpay": "plan_XXX"}.
+# The mock/dev provider ignores provider_refs (falls back to the plan code).
 # --------------------------------------------------------------------------
 PLANS: list[dict] = [
     {
@@ -73,6 +87,7 @@ PLANS: list[dict] = [
         "is_public": True,
         # No AI on Essentials — 0 documents the intent (no wallet is created).
         "ai_messages": Decimal("0"),
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}
     },
     {
         "code": "practice",
@@ -82,6 +97,7 @@ PLANS: list[dict] = [
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("500"),
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}
     },
     {
         "code": "concierge",
@@ -91,6 +107,7 @@ PLANS: list[dict] = [
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("2000"),
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}
     },
     {
         "code": "clinic",
@@ -178,6 +195,7 @@ async def _ensure_plans(db: AsyncSession, product_id: UUID) -> dict[str, Plan]:
                     trial_days=spec["trial_days"],
                     is_public=spec["is_public"],
                     is_active=True,
+                    provider_refs=dict(spec.get("provider_refs") or {}),
                 )
                 db.add(plan)
                 await db.flush()
@@ -186,9 +204,15 @@ async def _ensure_plans(db: AsyncSession, product_id: UUID) -> dict[str, Plan]:
                 plan.name = spec["name"]
                 plan.description = spec["description"]
                 plan.price_cents = spec["price_cents"]
+                plan.interval = BillingInterval.MONTH
                 plan.trial_days = spec["trial_days"]
                 plan.is_public = spec["is_public"]
                 plan.is_active = True
+                # Merge in any provider_refs the seed now carries, but NEVER
+                # clobber refs already set (out-of-band or a prior seed) with an
+                # empty placeholder — an empty {} here means "not yet known".
+                if spec.get("provider_refs"):
+                    plan.provider_refs = {**plan.provider_refs, **spec["provider_refs"]}
             by_code[plan.code] = plan
 
             # Ensure the ai_messages PlanFeature carries the right grant.

@@ -3,6 +3,7 @@ subscription-lifecycle webhook. Driven by the mock billing provider, whose
 `create_subscription` returns a fake hosted `short_url` (the redirect URL)."""
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -11,6 +12,7 @@ from sqlalchemy import select
 from app.core.database import session_scope
 from app.core.tenant import bypass_product, bypass_tenant
 from app.models.subscription import Subscription, SubscriptionStatus
+from app.providers.billing import get_billing_provider
 from tests.conftest import auth, register_tenant
 
 
@@ -40,6 +42,79 @@ async def test_checkout_paid_plan_returns_redirect_url(client: AsyncClient) -> N
     # The subscription is now linked to the provider subscription id.
     sub = await _subscription_for_tenant("acme")
     assert sub.provider_subscription_id == body["subscription_id"]
+
+
+@pytest.mark.asyncio
+async def test_checkout_paid_plan_defers_first_charge_to_trial_end(
+    client: AsyncClient,
+) -> None:
+    """Paid checkout must create the provider subscription with a NON-zero trial
+    (14 days) so the mandate is authorized now but the first charge is deferred
+    to trial end — not charged immediately on authorization (the PR #69 bug was
+    trial_days hardcoded to 0)."""
+    tok = await register_tenant(client, slug="acme")
+    before = datetime.now(UTC)
+    r = await client.post(
+        "/api/v1/billing/checkout",
+        json={"plan_code": "pro"},  # 14-day trial in the seed template
+        headers=auth(tok["access_token"]),
+    )
+    assert r.status_code == 200, r.text
+
+    sub = await _subscription_for_tenant("acme")
+    # Local subscription is on trial (NOT active) with access and a ~14d trial.
+    assert sub.status == SubscriptionStatus.TRIAL
+    assert sub.has_access is True
+    assert sub.trial_end is not None
+    assert timedelta(days=13) < (sub.trial_end - before) < timedelta(days=15)
+
+    # The provider was called with trial_days == 14 (not 0), and the returned
+    # subscription defers its first billing period (start_at) ~14 days out.
+    provider = get_billing_provider()
+    p_sub = provider._subscriptions[sub.provider_subscription_id]  # type: ignore[attr-defined]
+    assert p_sub.trial_days == 14
+    assert timedelta(days=13) < (p_sub.current_period_start - before) < timedelta(days=15)
+
+
+@pytest.mark.asyncio
+async def test_register_then_checkout_is_one_trial_not_stacked(
+    client: AsyncClient,
+) -> None:
+    """register→checkout must yield ONE trial, charged once after it — not two
+    stacked trials. When a local trial is already running, checkout defers the
+    first Razorpay charge to that EXISTING trial_end rather than opening a
+    fresh 14-day trial on top of it."""
+    tok = await register_tenant(client, slug="acme")
+
+    # Simulate register→start_trial having put the tenant on a mid-flight local
+    # trial (as the acme-practice Essentials plan does — the producta test
+    # product's cheapest plan is $0 so it activates instead). 10 days remain.
+    existing_trial_end = datetime.now(UTC) + timedelta(days=10)
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            row = await db.scalar(select(Subscription).where(Subscription.tenant.has(slug="acme")))
+            row.status = SubscriptionStatus.TRIAL
+            row.trial_end = existing_trial_end
+
+    r = await client.post(
+        "/api/v1/billing/checkout",
+        json={"plan_code": "pro"},
+        headers=auth(tok["access_token"]),
+    )
+    assert r.status_code == 200, r.text
+
+    sub = await _subscription_for_tenant("acme")
+    assert sub.status == SubscriptionStatus.TRIAL
+    # trial_end is PRESERVED (~10d), NOT pushed out to now+14d → no double trial.
+    assert abs((sub.trial_end - existing_trial_end).total_seconds()) < 5
+    assert sub.trial_end < datetime.now(UTC) + timedelta(days=12)
+
+    # The provider charge is deferred to the SAME (remaining ~10d) trial end,
+    # so the single trial ends in one charge — it is not 14 + 10 = 24 days out.
+    provider = get_billing_provider()
+    p_sub = provider._subscriptions[sub.provider_subscription_id]  # type: ignore[attr-defined]
+    assert 9 <= p_sub.trial_days <= 10
+    assert p_sub.current_period_start < datetime.now(UTC) + timedelta(days=12)
 
 
 @pytest.mark.asyncio

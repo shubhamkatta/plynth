@@ -25,6 +25,10 @@ class ProviderSubscription:
     # to authorize + pay (Razorpay subscriptions return this as `short_url` on
     # create). None for providers/paths that don't produce a redirect.
     authorization_url: str | None = None
+    # Trial length the subscription was created with. Non-zero means the mandate
+    # is authorized now but the first charge is deferred by this many days
+    # (Razorpay `start_at = now + trial_days*86400`). 0 = charge on authorization.
+    trial_days: int = 0
 
 
 @dataclass(slots=True)

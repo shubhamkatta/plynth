@@ -22,6 +22,10 @@ async def test_register_activates_free_subscription(client: AsyncClient) -> None
 
 @pytest.mark.asyncio
 async def test_purchase_plan(client: AsyncClient) -> None:
+    """Purchasing a PAID plan starts the card-on-file free trial: the mandate is
+    authorized now but the customer is NOT charged until trial end, so the
+    subscription lands in TRIAL (not ACTIVE) with access and a future
+    trial_end. It flips to ACTIVE later via the subscription webhook."""
     tok = await register_tenant(client, slug="acme")
     r = await client.post(
         "/api/v1/subscription/purchase",
@@ -31,8 +35,9 @@ async def test_purchase_plan(client: AsyncClient) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["plan_code"] == "pro"
-    assert body["status"] == "active"
+    assert body["status"] == "trial"
     assert body["has_access"] is True
+    assert body["trial_end"] is not None
 
 
 @pytest.mark.asyncio
@@ -89,7 +94,9 @@ async def test_cancel_at_period_end(client: AsyncClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["cancel_at_period_end"] is True
-    assert body["status"] == "active"  # still active until period end
+    # Paid purchase starts a trial; cancelling at period end keeps access until
+    # then (status is unchanged — TRIAL here, not flipped to cancelled).
+    assert body["status"] == "trial"
     assert body["has_access"] is True
 
 

@@ -190,4 +190,8 @@ class RazorpayBillingProvider(BillingProvider):
             current_period_start=_ts(sub.get("current_start")),
             current_period_end=_ts(sub.get("current_end")),
             cancel_at_period_end=bool(sub.get("cancel_at_cycle_end") or False),
+            # Razorpay returns the hosted authorization page as `short_url` on
+            # subscription create — this is the redirect URL the customer uses
+            # to authorize the mandate + pay.
+            authorization_url=sub.get("short_url"),
         )

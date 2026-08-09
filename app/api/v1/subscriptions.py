@@ -47,7 +47,7 @@ async def purchase(
     db: Annotated[AsyncSession, Depends(get_db)],
     idempotency_key: Annotated[str | None, Depends(get_idempotency_key)],
 ) -> SubscriptionResponse:
-    sub = await sub_svc.purchase(
+    sub, _authorization_url = await sub_svc.purchase(
         db,
         tenant_id=current_tenant_id() or user.tenant_id,
         plan_code=payload.plan_code,

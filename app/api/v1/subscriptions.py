@@ -54,6 +54,7 @@ async def purchase(
         payment_method_token=payload.payment_method_token,
         actor_user_id=actor_id(user),
         idempotency_key=idempotency_key,
+        customer_email=user.email,
     )
     return _serialise(sub)
 

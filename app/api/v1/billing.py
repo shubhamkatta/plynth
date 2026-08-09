@@ -41,6 +41,7 @@ async def checkout(
         plan_code=payload.plan_code,
         actor_user_id=actor_id(user),
         idempotency_key=idempotency_key,
+        customer_email=user.email,
     )
     if authorization_url is None:
         # Free/$0 plan: already active, nothing to authorize.

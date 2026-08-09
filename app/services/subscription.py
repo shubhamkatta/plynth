@@ -10,6 +10,7 @@ State machine:
 """
 
 from datetime import UTC, datetime, timedelta
+from math import ceil
 from uuid import UUID
 
 from sqlalchemy import select
@@ -116,6 +117,28 @@ async def purchase(
     Free/$0 plans skip the provider entirely — there's nothing to charge, so
     we never mint a provider subscription (a $0 Razorpay plan has no plan_id)
     and activate directly.
+
+    Card-on-file / UPI-AutoPay free trial (paid plans)
+    --------------------------------------------------
+    The customer authorizes a recurring mandate at checkout but is NOT charged
+    during the trial; the first deduction happens automatically at trial end.
+    The provider subscription is therefore created with a *future* ``start_at``
+    (``trial_days`` in the neutral interface), so the mandate is authorized now
+    while the first invoice lands ~``trial_days`` later. Combined timeline:
+
+        register (t0)       → start_trial → local TRIAL, trial_end = t0 + 14d
+        checkout (t0..t1)   → this call: Razorpay sub with start_at = trial_end
+                              (mandate authorized, NOT charged); local stays
+                              TRIAL, provider ids attached
+        trial_end (~t0+14d) → Razorpay raises the first invoice and charges
+                              ONCE; the subscription.charged/activated webhook
+                              flips local status → ACTIVE
+
+    Reconciliation: if register→start_trial already opened a local trial, we
+    honour its REMAINING days rather than starting a second one — the customer
+    sees ONE ~14-day trial and is charged once, after it. With no prior local
+    trial (free/active plan, or an admin-created tenant with no subscription) we
+    open a fresh trial of the plan's length.
     """
     tenant = await db.get(Tenant, tenant_id)
     if tenant is None:
@@ -124,6 +147,38 @@ async def purchase(
 
     provider = get_billing_provider()
     is_free = plan.price_cents == 0
+    now = datetime.now(UTC)
+
+    # Load any existing subscription BEFORE minting the provider subscription —
+    # we need to know whether a local trial is already running so the
+    # provider-level trial (Razorpay start_at) and the plynth-level trial line
+    # up into a single trial instead of stacking.
+    with bypass_product(), bypass_tenant():
+        existing = await db.scalar(
+            select(Subscription).where(Subscription.tenant_id == tenant_id)
+        )
+    is_new = existing is None
+
+    # ---- Trial derivation (the single-trial timeline) ----------------------
+    if is_free:
+        # $0 plan: no mandate, no charge, no trial.
+        trial_days = 0
+        trial_end: datetime | None = None
+    elif (
+        existing is not None
+        and existing.status == SubscriptionStatus.TRIAL
+        and existing.trial_end is not None
+        and existing.trial_end > now
+    ):
+        # Already on a local trial → defer the first charge to its END so we
+        # don't stack a second trial. ceil keeps the mandate's start_at on the
+        # far side of the existing trial_end (day resolution).
+        trial_end = existing.trial_end
+        trial_days = max(1, ceil((trial_end - now).total_seconds() / 86_400))
+    else:
+        # No prior trial → open a fresh one of the plan's length.
+        trial_days = plan.trial_days if plan.trial_days else settings.default_trial_days
+        trial_end = now + timedelta(days=trial_days)
 
     customer = None
     p_sub = None
@@ -140,17 +195,14 @@ async def purchase(
         p_sub = await provider.create_subscription(
             customer_id=customer.id,
             price_id=price_id or plan.code,
-            trial_days=0,
+            # Defer the first charge to trial end (was hardcoded 0, which made
+            # Razorpay charge immediately on mandate authorization).
+            trial_days=trial_days,
             payment_method_token=payment_method_token,
             idempotency_key=idempotency_key,
         )
         authorization_url = p_sub.authorization_url
 
-    with bypass_product(), bypass_tenant():
-        existing = await db.scalar(
-            select(Subscription).where(Subscription.tenant_id == tenant_id)
-        )
-    is_new = existing is None
     if existing is None:
         sub = Subscription(
             product_id=tenant.product_id,
@@ -161,20 +213,27 @@ async def purchase(
     else:
         sub = existing
 
-    now = datetime.now(UTC)
     sub.plan = plan
-    sub.status = SubscriptionStatus.ACTIVE
-    sub.current_period_start = p_sub.current_period_start if p_sub else now
-    sub.current_period_end = (
-        p_sub.current_period_end if p_sub else now + timedelta(days=365 * 100)
-    )
-    sub.trial_end = None
     sub.grace_ends_at = None
     sub.cancel_at_period_end = False
     sub.cancelled_at = None
     sub.provider = provider.name if p_sub else "mock"
     sub.provider_customer_id = customer.id if customer else None
     sub.provider_subscription_id = p_sub.id if p_sub else None
+    if is_free:
+        # Active immediately, never expires (no charge to defer).
+        sub.status = SubscriptionStatus.ACTIVE
+        sub.trial_end = None
+        sub.current_period_start = now
+        sub.current_period_end = now + timedelta(days=365 * 100)
+    else:
+        # On trial until the first charge; the subscription webhook flips this
+        # to ACTIVE once Razorpay confirms the first deduction at trial end.
+        assert trial_end is not None  # paid branch always derives a trial_end
+        sub.status = SubscriptionStatus.TRIAL
+        sub.trial_end = trial_end
+        sub.current_period_start = now
+        sub.current_period_end = trial_end
     await db.flush()
     credit_reference = (
         f"period:{p_sub.id}:{p_sub.current_period_start.date()}"
@@ -190,7 +249,14 @@ async def purchase(
         actor_user_id=actor_user_id,
         resource_type="subscription", resource_id=sub.id,
         tenant_id=tenant_id, product_id=tenant.product_id,
-        diff={"plan": plan.code, "provider": sub.provider, "created": is_new},
+        diff={
+            "plan": plan.code,
+            "provider": sub.provider,
+            "created": is_new,
+            "status": sub.status.value,
+            "trial_days": trial_days,
+            "first_charge_at": trial_end.isoformat() if trial_end else None,
+        },
     )
     return sub, authorization_url
 

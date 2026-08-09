@@ -424,7 +424,10 @@ async def test_admin_purchase_creates_subscription_when_none_exists(
     )
     assert r.status_code == 404
 
-    # Purchase Pro → creates a fresh ACTIVE subscription.
+    # Purchase Pro → creates a fresh subscription on the card-on-file trial
+    # (mandate authorized now, first charge deferred to trial end → TRIAL, not
+    # immediately ACTIVE). The upsert-when-none-exists behaviour is what's under
+    # test here.
     r = await client.post(
         "/api/v1/subscription/purchase",
         json={"plan_code": "pro"},
@@ -434,7 +437,7 @@ async def test_admin_purchase_creates_subscription_when_none_exists(
     assert r.status_code == 200, r.text
     sub = r.json()
     assert sub["plan_code"] == "pro"
-    assert sub["status"] == "active"
+    assert sub["status"] == "trial"
     assert sub["has_access"] is True
 
     # GET now returns it.

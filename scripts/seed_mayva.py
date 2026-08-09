@@ -63,10 +63,27 @@ AI_FEATURE_KEY = "ai_messages"
 # single default (USD cents). Per-region plan variants are NOT modelled here
 # (see the flag in the handoff report).
 #
-# Paid plans run a 14-day card-on-file / UPI-AutoPay-mandate free trial:
-# `trial_days=14` + a monthly `interval` mean the customer authorizes a
-# recurring mandate at checkout, is NOT charged during the trial, and the first
-# deduction lands after 14 days (see app/services/subscription.py::purchase).
+# Cadences (monthly + annual)
+# ---------------------------
+# Each paid tier ships in TWO cadences the marketing site's monthly/yearly
+# toggle switches between, distinguished by DISTINCT plan codes:
+#
+#   monthly → `essentials` / `practice` / `concierge`   (interval=MONTH)
+#   annual  → `<tier>_yearly`                            (interval=YEAR)
+#
+# The annual price is 10× the monthly (`price_cents`), i.e. "2 months free".
+# `POST /billing/checkout {plan_code}` resolves either cadence by code; the
+# provider (Razorpay) subscription's billing period is carried by the
+# provider PLAN itself (annual plan_id ⇒ annual billing), NOT by our
+# `interval` column — `interval` is catalog metadata for display/reporting.
+# So the annual cadence hinges on `provider_refs["razorpay"]` pointing at an
+# ANNUAL Razorpay plan_id (see TODO(billing) below).
+#
+# Paid plans run a 14-day card-on-file / UPI-AutoPay-mandate free trial (both
+# cadences): `trial_days=14` means the customer authorizes a recurring mandate
+# at checkout, is NOT charged during the trial, and the first deduction lands
+# after 14 days — then recurs monthly OR yearly per the plan's interval
+# (see app/services/subscription.py::purchase; the deferral is cadence-agnostic).
 #
 # TODO(billing): `provider_refs` maps a provider name → its plan id (Razorpay
 # `plan_id`). It MUST be populated with the real Razorpay plan_ids created in
@@ -75,6 +92,8 @@ AI_FEATURE_KEY = "ai_messages"
 # razorpay ref. It is intentionally left EMPTY here: do NOT invent fake
 # plan_ids (Razorpay rejects an unknown plan_id at subscription create). Fill
 # each paid plan's ref in below, e.g. "provider_refs": {"razorpay": "plan_XXX"}.
+# The MONTHLY plans need a monthly Razorpay plan_id; the `_yearly` plans need a
+# separate ANNUAL Razorpay plan_id (the plan_id is what encodes the period).
 # The mock/dev provider ignores provider_refs (falls back to the plan code).
 # --------------------------------------------------------------------------
 PLANS: list[dict] = [
@@ -83,37 +102,74 @@ PLANS: list[dict] = [
         "name": "Essentials",
         "description": "Booking + typed notes. The baseline front desk.",
         "price_cents": 2900,
+        "interval": BillingInterval.MONTH,
         "trial_days": 14,
         "is_public": True,
         # No AI on Essentials — 0 documents the intent (no wallet is created).
         "ai_messages": Decimal("0"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (monthly)
+    },
+    {
+        "code": "essentials_yearly",
+        "name": "Essentials (Annual)",
+        "description": "Booking + typed notes. The baseline front desk. Billed yearly (2 months free).",
+        "price_cents": 29000,      # 10× monthly — "2 months free"
+        "interval": BillingInterval.YEAR,
+        "trial_days": 14,
+        "is_public": True,
+        "ai_messages": Decimal("0"),
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (ANNUAL plan_id)
     },
     {
         "code": "practice",
         "name": "Practice",
         "description": "AI receptionist, voice notes, payment follow-ups, weekly digest.",
         "price_cents": 7900,
+        "interval": BillingInterval.MONTH,
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("500"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (monthly)
+    },
+    {
+        "code": "practice_yearly",
+        "name": "Practice (Annual)",
+        "description": "AI receptionist, voice notes, payment follow-ups, weekly digest. Billed yearly (2 mo free).",
+        "price_cents": 79000,      # 10× monthly — "2 months free"
+        "interval": BillingInterval.YEAR,
+        "trial_days": 14,
+        "is_public": True,
+        "ai_messages": Decimal("500"),
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (ANNUAL plan_id)
     },
     {
         "code": "concierge",
         "name": "Concierge",
         "description": "Everything in Practice plus the follow-up agent and analytics.",
         "price_cents": 19900,
+        "interval": BillingInterval.MONTH,
         "trial_days": 14,
         "is_public": True,
         "ai_messages": Decimal("2000"),
-        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (monthly)
+    },
+    {
+        "code": "concierge_yearly",
+        "name": "Concierge (Annual)",
+        "description": "Everything in Practice plus the follow-up agent and analytics. Billed yearly (2 months free).",
+        "price_cents": 199000,     # 10× monthly — "2 months free"
+        "interval": BillingInterval.YEAR,
+        "trial_days": 14,
+        "is_public": True,
+        "ai_messages": Decimal("2000"),
+        "provider_refs": {},  # TODO(billing): {"razorpay": "plan_..."}  (ANNUAL plan_id)
     },
     {
         "code": "clinic",
         "name": "Clinic",
         "description": "Multi-practitioner clinic tier with admin roles and unlimited AI. Custom pricing.",
         "price_cents": 0,          # custom / enterprise — priced per deal
+        "interval": BillingInterval.MONTH,
         "trial_days": 0,
         "is_public": False,        # not shown in the public /plans list
         # No ai_messages grant — Clinic relies on the `unlimited_ai`
@@ -125,6 +181,7 @@ PLANS: list[dict] = [
         "name": "Beta (all features)",
         "description": "Early-access / internal beta — every feature enabled, unlimited AI.",
         "price_cents": 0,
+        "interval": BillingInterval.MONTH,
         "trial_days": 0,
         "is_public": False,        # not shown in the public /plans list
         # Unlimited AI via the `unlimited_ai` component (below) — no quota.
@@ -140,8 +197,17 @@ PLANS: list[dict] = [
 # --------------------------------------------------------------------------
 # "beta" is included in every gate so the Beta plan unlocks ALL components
 # (including unlimited_ai → no AI-message quota). Early-access / internal tier.
-_PRACTICE_UP = ["practice", "concierge", "clinic", "beta"]
-_CONCIERGE_UP = ["concierge", "clinic", "beta"]
+#
+# Each paid tier's ANNUAL cadence (`<tier>_yearly`) grants the SAME components
+# as its monthly counterpart — a yearly subscriber must not lose features for
+# paying up front. So every gate that lists a monthly tier also lists its
+# `_yearly` code. (Clinic has no annual cadence — it's custom-priced.)
+_PRACTICE_UP = [
+    "practice", "practice_yearly",
+    "concierge", "concierge_yearly",
+    "clinic", "beta",
+]
+_CONCIERGE_UP = ["concierge", "concierge_yearly", "clinic", "beta"]
 _CLINIC_ONLY = ["clinic", "beta"]
 
 COMPONENTS: list[dict] = [
@@ -170,9 +236,9 @@ CATALOG_PLAN_CODES = {p["code"] for p in PLANS}
 
 
 async def _ensure_plans(db: AsyncSession, product_id: UUID) -> dict[str, Plan]:
-    """Create/refresh the 4 catalog plans + their ai_messages PlanFeature.
-    Idempotent. Also deactivates any legacy non-catalog plans so /plans
-    only surfaces the real Mayva tiers."""
+    """Create/refresh the catalog plans (monthly + annual cadences) + their
+    ai_messages PlanFeature. Idempotent. Each spec carries its own `interval`
+    (MONTH for monthly tiers, YEAR for the `_yearly` cadence)."""
     by_code: dict[str, Plan] = {}
     with bypass_product(), bypass_tenant():
         existing = {
@@ -191,7 +257,7 @@ async def _ensure_plans(db: AsyncSession, product_id: UUID) -> dict[str, Plan]:
                     description=spec["description"],
                     price_cents=spec["price_cents"],
                     currency="USD",
-                    interval=BillingInterval.MONTH,
+                    interval=spec["interval"],
                     trial_days=spec["trial_days"],
                     is_public=spec["is_public"],
                     is_active=True,
@@ -204,7 +270,7 @@ async def _ensure_plans(db: AsyncSession, product_id: UUID) -> dict[str, Plan]:
                 plan.name = spec["name"]
                 plan.description = spec["description"]
                 plan.price_cents = spec["price_cents"]
-                plan.interval = BillingInterval.MONTH
+                plan.interval = spec["interval"]
                 plan.trial_days = spec["trial_days"]
                 plan.is_public = spec["is_public"]
                 plan.is_active = True

@@ -20,6 +20,7 @@ import pytest
 from app.core.database import session_scope
 from app.core.exceptions import InsufficientCredits
 from app.core.tenant import bypass_product, bypass_tenant
+from app.models.plan import BillingInterval, Plan
 from app.models.product import Product, ProductStatus
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -75,6 +76,38 @@ def test_plan_catalog_ai_message_grants() -> None:
     assert grants["practice"] == Decimal("500")
     assert grants["concierge"] == Decimal("2000")
     assert grants["clinic"] is None  # relies on unlimited_ai component
+    # Annual cadences carry the same ai_messages grant as their monthly tier.
+    assert grants["essentials_yearly"] == Decimal("0")
+    assert grants["practice_yearly"] == Decimal("500")
+    assert grants["concierge_yearly"] == Decimal("2000")
+
+
+def test_plan_catalog_has_monthly_and_annual_cadence_per_paid_tier() -> None:
+    """Every paid tier ships a monthly and an annual plan with distinct codes,
+    the annual carrying interval=YEAR, trial_days=14, and price = 10× monthly
+    ("2 months free"). The site's yearly toggle sends the `_yearly` code."""
+    by_code = {p["code"]: p for p in seed_mayva.PLANS}
+    for tier in ("essentials", "practice", "concierge"):
+        monthly = by_code[tier]
+        annual = by_code[f"{tier}_yearly"]
+
+        assert monthly["interval"] is BillingInterval.MONTH
+        assert annual["interval"] is BillingInterval.YEAR
+
+        # Both cadences run the same 14-day deferred-charge trial.
+        assert monthly["trial_days"] == 14
+        assert annual["trial_days"] == 14
+
+        # Annual is 10× monthly — "2 months free".
+        assert annual["price_cents"] == monthly["price_cents"] * 10
+
+        # Both are public (the site toggle switches between them).
+        assert monthly["is_public"] is True
+        assert annual["is_public"] is True
+
+        # Provider refs start empty — real Razorpay plan_ids are filled later
+        # (a SEPARATE annual plan_id encodes the annual billing period).
+        assert annual.get("provider_refs") == {}
 
 
 def test_component_plan_gating_spec() -> None:
@@ -85,13 +118,17 @@ def test_component_plan_gating_spec() -> None:
         "unlimited_ai",
     }
     # The non-public 'beta' plan unlocks every component (all-features access).
+    # Each paid tier's ANNUAL cadence (`<tier>_yearly`) is gated identically to
+    # its monthly counterpart — a yearly subscriber keeps the same features.
     # Practice-and-up components.
     for code in ("ai_receptionist", "voice_notes", "payment_followups", "weekly_digest"):
-        assert gates[code] == ["practice", "concierge", "clinic", "beta"]
+        assert gates[code] == [
+            "practice", "practice_yearly", "concierge", "concierge_yearly", "clinic", "beta",
+        ]
     # Concierge-and-up.
     for code in ("followup_agent", "analytics"):
-        assert gates[code] == ["concierge", "clinic", "beta"]
-    # Clinic-only (+ beta).
+        assert gates[code] == ["concierge", "concierge_yearly", "clinic", "beta"]
+    # Clinic-only (+ beta) — Clinic has no annual cadence (custom-priced).
     for code in ("multi_practitioner", "admin_roles", "unlimited_ai"):
         assert gates[code] == ["clinic", "beta"]
 
@@ -183,3 +220,59 @@ async def test_seed_is_idempotent() -> None:
         )
     assert len(comps) == 9
     assert wallet.balance == Decimal("500")  # not 1000
+
+
+async def _plans_by_code(product_id) -> dict[str, Plan]:  # type: ignore[no-untyped-def]
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            from sqlalchemy import select
+
+            rows = (
+                await db.scalars(select(Plan).where(Plan.product_id == product_id))
+            ).all()
+    return {p.code: p for p in rows}
+
+
+@pytest.mark.asyncio
+async def test_seed_creates_monthly_and_annual_plan_rows() -> None:
+    """The seed persists both cadences per paid tier with the right interval,
+    trial_days and 10× annual price in the DB (not just the spec)."""
+    product, _tenant, _user = await _bootstrap_mayva_product()
+    plans = await _plans_by_code(product.id)
+
+    for tier in ("essentials", "practice", "concierge"):
+        assert tier in plans
+        assert f"{tier}_yearly" in plans
+        monthly, annual = plans[tier], plans[f"{tier}_yearly"]
+        assert monthly.interval is BillingInterval.MONTH
+        assert annual.interval is BillingInterval.YEAR
+        assert annual.trial_days == 14
+        assert annual.price_cents == monthly.price_cents * 10
+        assert annual.is_public is True
+
+
+@pytest.mark.asyncio
+async def test_reseed_does_not_clobber_annual_provider_refs() -> None:
+    """A real Razorpay annual plan_id set out-of-band (or by a prior seed) must
+    survive a re-seed — the empty `{}` placeholder in the spec must never
+    overwrite it (mirrors the monthly merge behaviour)."""
+    product, _tenant, _user = await _bootstrap_mayva_product()
+
+    # Simulate ops setting the real annual Razorpay plan_id in prod.
+    from sqlalchemy import select
+
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            annual = await db.scalar(
+                select(Plan).where(
+                    Plan.product_id == product.id, Plan.code == "practice_yearly"
+                )
+            )
+            annual.provider_refs = {"razorpay": "plan_ANNUAL_REAL"}
+
+    # Re-seed (spec carries provider_refs={} for practice_yearly).
+    async with session_scope() as db:
+        await seed_mayva._ensure_plans(db, product.id)
+
+    plans = await _plans_by_code(product.id)
+    assert plans["practice_yearly"].provider_refs == {"razorpay": "plan_ANNUAL_REAL"}

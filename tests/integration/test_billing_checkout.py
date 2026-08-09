@@ -11,9 +11,10 @@ from sqlalchemy import select
 
 from app.core.database import session_scope
 from app.core.tenant import bypass_product, bypass_tenant
+from app.models.plan import BillingInterval, Plan
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.providers.billing import get_billing_provider
-from tests.conftest import auth, register_tenant
+from tests.conftest import auth, product_id, register_tenant
 
 
 async def _subscription_for_tenant(slug: str) -> Subscription:
@@ -22,6 +23,34 @@ async def _subscription_for_tenant(slug: str) -> Subscription:
             return await db.scalar(
                 select(Subscription).where(Subscription.tenant.has(slug=slug))
             )
+
+
+async def _ensure_annual_plan(
+    *, code: str = "practice_yearly", price_cents: int = 79000
+) -> None:
+    """Idempotently add an ANNUAL (interval=YEAR) plan to the `producta` test
+    product so checkout can resolve a yearly plan_code — mirrors what
+    `scripts.seed_mayva` seeds for the mayva-practice product (14-day deferred
+    trial, empty provider_refs; the mock provider falls back to the plan code).
+
+    Plans live in the session-preserved catalog (not truncated between tests),
+    so this is create-if-absent AND marked `is_public=False` to avoid leaking
+    into the exact-set assertion in test_plans.py::test_list_plans_public_only.
+    `get_by_code` (what checkout uses) resolves regardless of is_public, so the
+    cadence/trial path is exercised identically; the real seed plans' public
+    flag is asserted in tests/integration/test_mayva_catalog.py."""
+    pid = product_id("producta")
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            existing = await db.scalar(
+                select(Plan).where(Plan.product_id == pid, Plan.code == code)
+            )
+            if existing is None:
+                db.add(Plan(
+                    product_id=pid, code=code, name="Practice (Annual)",
+                    price_cents=price_cents, interval=BillingInterval.YEAR,
+                    trial_days=14, is_public=False, provider_refs={},
+                ))
 
 
 @pytest.mark.asyncio
@@ -70,6 +99,49 @@ async def test_checkout_paid_plan_defers_first_charge_to_trial_end(
 
     # The provider was called with trial_days == 14 (not 0), and the returned
     # subscription defers its first billing period (start_at) ~14 days out.
+    provider = get_billing_provider()
+    p_sub = provider._subscriptions[sub.provider_subscription_id]  # type: ignore[attr-defined]
+    assert p_sub.trial_days == 14
+    assert timedelta(days=13) < (p_sub.current_period_start - before) < timedelta(days=15)
+
+
+@pytest.mark.asyncio
+async def test_checkout_annual_plan_resolves_and_defers_first_charge(
+    client: AsyncClient,
+) -> None:
+    """Checkout on an ANNUAL plan_code (`practice_yearly`) resolves the annual
+    plan and creates a provider subscription that defers the first charge ~14
+    days — same card-on-file trial as monthly, just billed yearly thereafter.
+    The annual cadence is carried by the resolved plan (interval=YEAR); the
+    trial deferral logic is cadence-agnostic."""
+    await _ensure_annual_plan()
+    tok = await register_tenant(client, slug="acme")
+    before = datetime.now(UTC)
+    r = await client.post(
+        "/api/v1/billing/checkout",
+        json={"plan_code": "practice_yearly"},
+        headers=auth(tok["access_token"]),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["url"] is not None
+    assert body["subscription_id"] is not None
+
+    sub = await _subscription_for_tenant("acme")
+    # Resolved the ANNUAL plan (interval=YEAR) with the annual price.
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            plan = await db.get(Plan, sub.plan_id)
+    assert plan.code == "practice_yearly"
+    assert plan.interval is BillingInterval.YEAR
+    assert plan.price_cents == 79000
+
+    # On trial with access; first charge deferred ~14 days (mandate now).
+    assert sub.status == SubscriptionStatus.TRIAL
+    assert sub.has_access is True
+    assert sub.trial_end is not None
+    assert timedelta(days=13) < (sub.trial_end - before) < timedelta(days=15)
+
     provider = get_billing_provider()
     p_sub = provider._subscriptions[sub.provider_subscription_id]  # type: ignore[attr-defined]
     assert p_sub.trial_days == 14

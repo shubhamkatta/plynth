@@ -99,6 +99,7 @@ async def purchase(
     payment_method_token: str | None,
     actor_user_id: UUID | None,
     idempotency_key: str | None,
+    customer_email: str | None = None,
 ) -> tuple[Subscription, str | None]:
     """Upsert an ACTIVE subscription on `plan_code` for the tenant.
 
@@ -189,8 +190,9 @@ async def purchase(
             raise ValidationFailed(
                 f"plan {plan.code} has no price for provider {provider.name}"
             )
+        billing_email = customer_email or tenant.slug
         customer = await provider.ensure_customer(
-            tenant_id=str(tenant_id), email=f"billing@{tenant.slug}",
+            tenant_id=str(tenant_id), email=billing_email,
         )
         p_sub = await provider.create_subscription(
             customer_id=customer.id,
@@ -268,6 +270,7 @@ async def checkout(
     plan_code: str,
     actor_user_id: UUID | None,
     idempotency_key: str | None,
+    customer_email: str | None = None,
 ) -> tuple[Subscription, str | None]:
     """Marketing-site checkout: run the purchase/subscribe path for `plan_code`
     on the caller's tenant and surface the provider's hosted authorization URL
@@ -282,6 +285,7 @@ async def checkout(
         payment_method_token=None,
         actor_user_id=actor_user_id,
         idempotency_key=idempotency_key,
+        customer_email=customer_email,
     )
     await audit.record(
         db, action="billing.checkout", actor_user_id=actor_user_id,

@@ -251,8 +251,17 @@ provider.parse_webhook (verifies signature)
     billing.record_invoice(...)
     billing.handle_payment_failed/succeeded
     audit(webhook.payment_*)
+  on subscription.activated / .charged / .authenticated (Razorpay):
+    sub = SELECT WHERE provider_subscription_id = <entity id>
+    set_current_product(sub.product_id)
+    billing.handle_subscription_activated  → status ACTIVE, grace cleared
+    audit(webhook.subscription_activated)
   always 200
 ```
+
+Razorpay subscription-lifecycle events confirm a checkout redirect where the
+first charge happens on the hosted `short_url` page — the provider subscription
+id is read from the nested `payload.subscription.entity.id`.
 
 ---
 
@@ -630,6 +639,7 @@ architecture and contribution flow.
 - **Roles** — `GET / POST /api/v1/roles`, `PATCH /api/v1/roles/{id}`, `POST /api/v1/roles/assign`, `GET /api/v1/roles/permissions` (per-product role catalogue + global permission codes).
 - **Plans** — `GET / POST /api/v1/plans`, `PATCH /api/v1/plans/{code}` (price + currency + interval + trial + features).
 - **Subscriptions** — `GET /api/v1/subscriptions` (current tenant's subscription), `POST /api/v1/subscriptions/{purchase,change,cancel}` with proration / at-period-end semantics.
+- **Billing checkout** — `POST /api/v1/billing/checkout` (JWT + `subscriptions:purchase`, body `{plan_code}`). Runs the purchase/subscribe path and returns the provider's hosted authorization URL for a browser redirect: `{"url": "<razorpay short_url>", "subscription_id": "<provider id>"}` for a paid plan, or `{"url": null, "status": "active"}` for a free/$0 plan (already activated, no payment). Powers the Acme marketing-site paid-signup step; reuses `subscription.purchase`.
 - **Credits** — `GET /api/v1/credits/wallets`, `GET /api/v1/credits/ledger?limit=N`, `POST /api/v1/credits/grant` (manual top-up with idempotency reference).
 - **Audit** — `GET /api/v1/credits/ledger` as stand-in until `/api/v1/audit` ships.
 - **Dashboard / Settings** — local config + session inspection only.

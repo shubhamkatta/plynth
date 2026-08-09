@@ -98,8 +98,13 @@ async def purchase(
     payment_method_token: str | None,
     actor_user_id: UUID | None,
     idempotency_key: str | None,
-) -> Subscription:
+) -> tuple[Subscription, str | None]:
     """Upsert an ACTIVE subscription on `plan_code` for the tenant.
+
+    Returns ``(subscription, authorization_url)``. ``authorization_url`` is
+    the provider's hosted redirect URL the customer must visit to authorize +
+    pay (Razorpay's subscription ``short_url``); it is ``None`` for free/$0
+    plans and for providers/paths that don't produce a redirect.
 
     Two paths:
     - Existing sub (trial / past_due / grace / cancelled) → replace plan
@@ -107,6 +112,10 @@ async def purchase(
     - No sub yet (admin-created tenant, or product where start_trial
       wasn't called) → create one. Saves an extra "start trial first" UX
       detour just to immediately purchase.
+
+    Free/$0 plans skip the provider entirely — there's nothing to charge, so
+    we never mint a provider subscription (a $0 Razorpay plan has no plan_id)
+    and activate directly.
     """
     tenant = await db.get(Tenant, tenant_id)
     if tenant is None:
@@ -114,20 +123,28 @@ async def purchase(
     plan = await plan_svc.get_by_code(db, product_id=tenant.product_id, code=plan_code)
 
     provider = get_billing_provider()
-    price_id = plan.provider_refs.get(provider.name)
-    if not price_id and provider.name != "mock":
-        raise ValidationFailed(f"plan {plan.code} has no price for provider {provider.name}")
+    is_free = plan.price_cents == 0
 
-    customer = await provider.ensure_customer(
-        tenant_id=str(tenant_id), email=f"billing@{tenant.slug}",
-    )
-    p_sub = await provider.create_subscription(
-        customer_id=customer.id,
-        price_id=price_id or plan.code,
-        trial_days=0,
-        payment_method_token=payment_method_token,
-        idempotency_key=idempotency_key,
-    )
+    customer = None
+    p_sub = None
+    authorization_url: str | None = None
+    if not is_free:
+        price_id = plan.provider_refs.get(provider.name)
+        if not price_id and provider.name != "mock":
+            raise ValidationFailed(
+                f"plan {plan.code} has no price for provider {provider.name}"
+            )
+        customer = await provider.ensure_customer(
+            tenant_id=str(tenant_id), email=f"billing@{tenant.slug}",
+        )
+        p_sub = await provider.create_subscription(
+            customer_id=customer.id,
+            price_id=price_id or plan.code,
+            trial_days=0,
+            payment_method_token=payment_method_token,
+            idempotency_key=idempotency_key,
+        )
+        authorization_url = p_sub.authorization_url
 
     with bypass_product(), bypass_tenant():
         existing = await db.scalar(
@@ -144,30 +161,69 @@ async def purchase(
     else:
         sub = existing
 
+    now = datetime.now(UTC)
     sub.plan = plan
     sub.status = SubscriptionStatus.ACTIVE
-    sub.current_period_start = p_sub.current_period_start
-    sub.current_period_end = p_sub.current_period_end
+    sub.current_period_start = p_sub.current_period_start if p_sub else now
+    sub.current_period_end = (
+        p_sub.current_period_end if p_sub else now + timedelta(days=365 * 100)
+    )
     sub.trial_end = None
     sub.grace_ends_at = None
     sub.cancel_at_period_end = False
     sub.cancelled_at = None
-    sub.provider = provider.name
-    sub.provider_customer_id = customer.id
-    sub.provider_subscription_id = p_sub.id
+    sub.provider = provider.name if p_sub else "mock"
+    sub.provider_customer_id = customer.id if customer else None
+    sub.provider_subscription_id = p_sub.id if p_sub else None
     await db.flush()
+    credit_reference = (
+        f"period:{p_sub.id}:{p_sub.current_period_start.date()}"
+        if p_sub
+        else f"free:{sub.id}:{plan.code}"
+    )
     await credit.grant_plan_credits(
         db, tenant_id=tenant_id, product_id=tenant.product_id, plan=plan,
-        reference=f"period:{p_sub.id}:{p_sub.current_period_start.date()}",
+        reference=credit_reference,
     )
     await audit.record(
         db, action="subscription.purchase" if not is_new else "subscription.start",
         actor_user_id=actor_user_id,
         resource_type="subscription", resource_id=sub.id,
         tenant_id=tenant_id, product_id=tenant.product_id,
-        diff={"plan": plan.code, "provider": provider.name, "created": is_new},
+        diff={"plan": plan.code, "provider": sub.provider, "created": is_new},
     )
-    return sub
+    return sub, authorization_url
+
+
+async def checkout(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    plan_code: str,
+    actor_user_id: UUID | None,
+    idempotency_key: str | None,
+) -> tuple[Subscription, str | None]:
+    """Marketing-site checkout: run the purchase/subscribe path for `plan_code`
+    on the caller's tenant and surface the provider's hosted authorization URL
+    (Razorpay ``short_url``) so the site can redirect the browser to pay.
+
+    Free/$0 plans need no payment — they activate immediately and the returned
+    URL is ``None``. Reuses :func:`purchase`; adds a checkout audit trail."""
+    sub, authorization_url = await purchase(
+        db,
+        tenant_id=tenant_id,
+        plan_code=plan_code,
+        payment_method_token=None,
+        actor_user_id=actor_user_id,
+        idempotency_key=idempotency_key,
+    )
+    await audit.record(
+        db, action="billing.checkout", actor_user_id=actor_user_id,
+        resource_type="subscription", resource_id=sub.id,
+        tenant_id=tenant_id, product_id=sub.product_id,
+        diff={"plan": plan_code, "has_redirect": authorization_url is not None},
+    )
+    return sub, authorization_url
 
 
 async def change_plan(

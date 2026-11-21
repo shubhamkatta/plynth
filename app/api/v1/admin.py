@@ -6,12 +6,16 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_platform_admin
 from app.core.exceptions import NotFound, ValidationFailed
 from app.core.tenant import bypass_product, bypass_tenant
+from app.models.invite import INVITE_KIND_NEW_TENANT
 from app.models.product import Product
+from app.schemas.invite import InviteResponse, ProspectInviteCreate
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
+from app.services import invite as invite_svc
 from app.services import plan as plan_svc
 from app.services import product as product_svc
 from app.services import rbac
@@ -55,6 +59,29 @@ def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
         else:
             out[k] = v
     return out
+
+
+@router.post("/products/{slug}/invites", response_model=InviteResponse,
+             status_code=status.HTTP_201_CREATED)
+async def invite_prospect(
+    slug: str, payload: ProspectInviteCreate, db: Annotated[AsyncSession, Depends(get_db)]
+) -> InviteResponse:
+    """Invite a prospect (e.g. a therapist) to a product. On accept they get
+    their OWN new tenant. Platform-admin only."""
+    with bypass_product(), bypass_tenant():
+        product = await product_svc.get_by_slug(db, slug)
+    if product is None:
+        raise NotFound(f"product {slug!r} not found")
+    invite, link = await invite_svc.create_invite(
+        db, product_id=product.id, kind=INVITE_KIND_NEW_TENANT, tenant_id=None,
+        email=payload.email, full_name=payload.full_name, role_codes=[],
+        plan_code=payload.plan_code, actor_user_id=None,
+        inviter_label=product.name,
+    )
+    return InviteResponse(
+        id=invite.id, email=invite.email, kind=invite.kind, expires_at=invite.expires_at,
+        link=None if settings.is_production else link,
+    )
 
 
 @router.patch("/products/{slug}", response_model=ProductResponse)

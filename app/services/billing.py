@@ -96,6 +96,9 @@ async def handle_subscription_activated(db: AsyncSession, *, subscription_id: UU
     sub = await db.get(Subscription, subscription_id)
     if sub is None:
         return
+    # A late/out-of-order charge event must not resurrect a cancelled sub.
+    if sub.status == SubscriptionStatus.CANCELLED:
+        return
     if sub.status != SubscriptionStatus.ACTIVE:
         sub.status = SubscriptionStatus.ACTIVE
         sub.grace_ends_at = None
@@ -103,6 +106,54 @@ async def handle_subscription_activated(db: AsyncSession, *, subscription_id: UU
             db, action="subscription.reactivated", resource_type="subscription",
             resource_id=sub.id, tenant_id=sub.tenant_id, product_id=sub.product_id,
         )
+
+
+async def handle_mandate_authorized(db: AsyncSession, *, subscription_id: UUID) -> None:
+    """Razorpay `subscription.authenticated`: the customer authorized the
+    mandate (no money moved yet on a card-on-file trial). Record it so the app
+    can tell "trial, mandate in place" from "trial, never authorized" without
+    flipping the status label early."""
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None or sub.meta.get("mandate_authorized_at"):
+        return
+    sub.meta = {**sub.meta, "mandate_authorized_at": datetime.now(UTC).isoformat()}
+    await db.flush()
+
+
+async def handle_subscription_pending(db: AsyncSession, *, subscription_id: UUID) -> None:
+    """Razorpay `subscription.pending`: a charge failed and Razorpay is
+    retrying → PAST_DUE (access kept). Only from ACTIVE/TRIAL."""
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None or sub.status not in (SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL):
+        return
+    sub.status = SubscriptionStatus.PAST_DUE
+    await db.flush()
+    await audit.record(
+        db, action="subscription.past_due", resource_type="subscription",
+        resource_id=sub.id, tenant_id=sub.tenant_id, product_id=sub.product_id,
+    )
+
+
+async def handle_subscription_halted(db: AsyncSession, *, subscription_id: UUID) -> None:
+    """Razorpay `subscription.halted`: retries exhausted → grace period (the
+    hourly sweep suspends it when `grace_ends_at` passes)."""
+    await sub_svc.enter_grace_period(db, subscription_id=subscription_id)
+
+
+async def handle_subscription_cancelled(db: AsyncSession, *, subscription_id: UUID) -> None:
+    """Razorpay `subscription.cancelled` (incl. cancel-at-cycle-end firing).
+    Idempotent."""
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None or sub.status == SubscriptionStatus.CANCELLED:
+        return
+    sub.status = SubscriptionStatus.CANCELLED
+    sub.cancelled_at = datetime.now(UTC)
+    await db.flush()
+    await audit.record(
+        db, action="subscription.cancelled", resource_type="subscription",
+        resource_id=sub.id, tenant_id=sub.tenant_id, product_id=sub.product_id,
+        diff={"source": "provider_webhook"},
+    )
 
 
 async def handle_payment_succeeded(db: AsyncSession, *, invoice_id: UUID) -> None:

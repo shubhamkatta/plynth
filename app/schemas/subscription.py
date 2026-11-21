@@ -34,3 +34,6 @@ class SubscriptionResponse(TimestampedResponse):
     cancel_at_period_end: bool
     cancelled_at: datetime | None
     has_access: bool
+    # True once the customer authorized the Razorpay mandate (webhook-recorded).
+    # Poll GET /subscription after checkout until this flips.
+    mandate_authorized: bool = False

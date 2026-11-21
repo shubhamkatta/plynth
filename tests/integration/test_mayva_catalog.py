@@ -84,7 +84,7 @@ def test_plan_catalog_ai_message_grants() -> None:
 
 def test_plan_catalog_has_monthly_and_annual_cadence_per_paid_tier() -> None:
     """Every paid tier ships a monthly and an annual plan with distinct codes,
-    the annual carrying interval=YEAR, trial_days=14, and price = 10× monthly
+    the annual carrying interval=YEAR, trial_days=30, and price = 10× monthly
     ("2 months free"). The site's yearly toggle sends the `_yearly` code."""
     by_code = {p["code"]: p for p in seed_mayva.PLANS}
     for tier in ("essentials", "practice", "concierge"):
@@ -94,9 +94,9 @@ def test_plan_catalog_has_monthly_and_annual_cadence_per_paid_tier() -> None:
         assert monthly["interval"] is BillingInterval.MONTH
         assert annual["interval"] is BillingInterval.YEAR
 
-        # Both cadences run the same 14-day deferred-charge trial.
-        assert monthly["trial_days"] == 14
-        assert annual["trial_days"] == 14
+        # Both cadences run the same 30-day deferred-charge trial.
+        assert monthly["trial_days"] == 30
+        assert annual["trial_days"] == 30
 
         # Annual is 10× monthly — "2 months free".
         assert annual["price_cents"] == monthly["price_cents"] * 10
@@ -249,7 +249,7 @@ async def test_seed_creates_monthly_and_annual_plan_rows() -> None:
         monthly, annual = plans[tier], plans[f"{tier}_yearly"]
         assert monthly.interval is BillingInterval.MONTH
         assert annual.interval is BillingInterval.YEAR
-        assert annual.trial_days == 14
+        assert annual.trial_days == 30
         assert annual.price_cents == monthly.price_cents * 10
         assert annual.is_public is True
 

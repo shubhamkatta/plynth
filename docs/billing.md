@@ -93,6 +93,17 @@ To add a new provider (Paddle, Lemon Squeezy, …):
 
 ## Webhooks
 
+Razorpay lifecycle events handled (beyond `activated` / `charged`):
+
+| Event | Effect |
+| --- | --- |
+| `subscription.authenticated` | records `meta.mandate_authorized_at`; status stays `trial`; surfaced as `mandate_authorized` on `GET /subscription` |
+| `subscription.pending` | charge failed, Razorpay retrying → `past_due` (from `active`/`trial`) |
+| `subscription.halted` | retries exhausted → `grace` |
+| `subscription.cancelled` | → `cancelled` (idempotent). A later `charged` never revives a cancelled sub |
+
+`payment.failed` is intentionally ignored (no subscription id in payload).
+
 `POST /api/v1/webhooks/billing`:
 - Always verify the signature header (`Stripe-Signature`, or `X-Razorpay-Signature` for Razorpay). Provider's
   `parse_webhook` does it.

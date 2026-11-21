@@ -66,6 +66,22 @@ class Settings(BaseSettings):
     # `start_at` and its `subscription.charged` webhook reaching us.
     trial_expiry_buffer_days: int = 1
 
+    # Invites
+    invite_ttl_days: int = 7
+    # Public origin of THIS API. Used to build the fallback hosted invite page
+    # link (`<public_base_url>/invite?token=…`) for products without
+    # `settings.app_url`.
+    public_base_url: str = "https://api.corporatethings.com"
+
+    # Transactional email. `log` (default) only logs; `ses` sends via Amazon
+    # SES. Credentials resolve via the standard AWS chain (instance role / env)
+    # unless AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are set explicitly.
+    email_provider: Literal["log", "ses"] = "log"
+    email_from_address: str = ""
+    aws_region: str = "ap-south-1"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+
     # Rate limit
     rate_limit_per_minute: int = 120
 

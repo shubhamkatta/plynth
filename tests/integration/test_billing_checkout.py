@@ -363,3 +363,63 @@ async def test_expire_lapsed_trials_sweeps_only_lapsed_trials(client: AsyncClien
     async with session_scope() as db:
         with bypass_product(), bypass_tenant():
             assert (await db.get(Subscription, lapsed_sub.id)).status == SubscriptionStatus.ACTIVE
+
+
+async def _checkout_sub(client: AsyncClient, slug: str) -> tuple[Subscription, str]:
+    tok = await register_tenant(client, slug=slug)
+    await client.post(
+        "/api/v1/billing/checkout", json={"plan_code": "pro"},
+        headers=auth(tok["access_token"]),
+    )
+    sub = await _subscription_for_tenant(slug)
+    assert sub.provider_subscription_id
+    return sub, tok["access_token"]
+
+
+async def _fire(client: AsyncClient, event: str, provider_sub_id: str) -> None:
+    payload = json.dumps({
+        "id": f"evt_{event}", "type": event,
+        "data": {"subscription": {"entity": {"id": provider_sub_id}}},
+    }).encode()
+    r = await client.post("/api/v1/webhooks/billing", content=payload)
+    assert r.status_code == 200
+
+
+async def _status(sub_id) -> SubscriptionStatus:  # noqa: ANN001
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            return (await db.get(Subscription, sub_id)).status
+
+
+@pytest.mark.asyncio
+async def test_webhook_authenticated_records_mandate_without_activating(client: AsyncClient) -> None:
+    sub, access = await _checkout_sub(client, "mandate-co")
+    before = await client.get("/api/v1/subscription", headers=auth(access))
+    assert before.json()["mandate_authorized"] is False
+
+    await _fire(client, "subscription.authenticated", sub.provider_subscription_id)
+
+    after = await client.get("/api/v1/subscription", headers=auth(access))
+    assert after.json()["mandate_authorized"] is True
+    assert after.json()["status"] == "trial"  # label stays TRIAL until first charge
+
+
+@pytest.mark.asyncio
+async def test_webhook_pending_halted_cancelled_drive_status(client: AsyncClient) -> None:
+    sub, _ = await _checkout_sub(client, "lifecycle-co")
+    pid = sub.provider_subscription_id
+
+    await _fire(client, "subscription.pending", pid)
+    assert await _status(sub.id) == SubscriptionStatus.PAST_DUE
+
+    await _fire(client, "subscription.halted", pid)
+    assert await _status(sub.id) == SubscriptionStatus.GRACE
+
+    await _fire(client, "subscription.cancelled", pid)
+    assert await _status(sub.id) == SubscriptionStatus.CANCELLED
+    await _fire(client, "subscription.cancelled", pid)  # idempotent
+    assert await _status(sub.id) == SubscriptionStatus.CANCELLED
+
+    # A late/out-of-order charge must NOT resurrect a cancelled subscription.
+    await _fire(client, "subscription.charged", pid)
+    assert await _status(sub.id) == SubscriptionStatus.CANCELLED

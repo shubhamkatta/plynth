@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.api import pages
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import engine
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
         return {"status": "ready"}
 
     app.include_router(api_router, prefix=settings.api_prefix)
+    app.include_router(pages.router)
     return app
 
 

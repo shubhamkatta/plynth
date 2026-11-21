@@ -87,10 +87,10 @@ WA_FEATURE_KEY = "wa_messages"
 # So the annual cadence hinges on `provider_refs["razorpay"]` pointing at an
 # ANNUAL Razorpay plan_id (see TODO(billing) below).
 #
-# Paid plans run a 14-day card-on-file / UPI-AutoPay-mandate free trial (both
-# cadences): `trial_days=14` means the customer authorizes a recurring mandate
+# Paid plans run a 30-day card-on-file / UPI-AutoPay-mandate free trial (both
+# cadences): `trial_days=30` means the customer authorizes a recurring mandate
 # at checkout, is NOT charged during the trial, and the first deduction lands
-# after 14 days — then recurs monthly OR yearly per the plan's interval
+# after 30 days — then recurs monthly OR yearly per the plan's interval
 # (see app/services/subscription.py::purchase; the deferral is cadence-agnostic).
 #
 # TODO(billing): `provider_refs` maps a provider name → its plan id (Razorpay
@@ -111,7 +111,7 @@ PLANS: list[dict] = [
         "description": "Booking + typed notes. The baseline front desk.",
         "price_cents": 2900,
         "interval": BillingInterval.MONTH,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         # No AI on Essentials — 0 documents the intent (no wallet is created).
         "ai_messages": Decimal("0"),
@@ -125,7 +125,7 @@ PLANS: list[dict] = [
         "description": "Booking + typed notes. The baseline front desk. Billed yearly (2 months free).",
         "price_cents": 29000,      # 10× monthly — "2 months free"
         "interval": BillingInterval.YEAR,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("0"),
         # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
@@ -138,7 +138,7 @@ PLANS: list[dict] = [
         "description": "AI receptionist, voice notes, payment follow-ups, weekly digest.",
         "price_cents": 7900,
         "interval": BillingInterval.MONTH,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("500"),
         # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
@@ -151,7 +151,7 @@ PLANS: list[dict] = [
         "description": "AI receptionist, voice notes, payment follow-ups, weekly digest. Billed yearly (2 mo free).",
         "price_cents": 79000,      # 10× monthly — "2 months free"
         "interval": BillingInterval.YEAR,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("500"),
         # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
@@ -164,7 +164,7 @@ PLANS: list[dict] = [
         "description": "Everything in Practice plus the follow-up agent and analytics.",
         "price_cents": 19900,
         "interval": BillingInterval.MONTH,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("2000"),
         # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
@@ -177,7 +177,7 @@ PLANS: list[dict] = [
         "description": "Everything in Practice plus the follow-up agent and analytics. Billed yearly (2 months free).",
         "price_cents": 199000,     # 10× monthly — "2 months free"
         "interval": BillingInterval.YEAR,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("2000"),
         # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.

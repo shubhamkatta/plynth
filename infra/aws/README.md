@@ -75,9 +75,40 @@ Take a **manual RDS snapshot first** (it also holds Mayva's health data).
 (else stored env-vault entries become unreadable forever), plus Razorpay keys and
 webhook secret. Rotate separately: `PLATFORM_ADMIN_TOKEN`.
 
+## Box first-time setup + deploys
+
+Files (repo root): `docker-compose.aws.yml`, `Caddyfile.aws`,
+`.github/workflows/deploy-aws.yml`. The workflow ships both config files to the
+box itself, so the box needs **no git checkout** — only:
+
+1. `/opt/plynth/.env` — hand-created over SSM, `chmod 600`, never committed. Keys
+   are listed in the repo's `.env.example`. Values that matter:
+   `DATABASE_URL` (see DB section), `REDIS_URL=redis://redis:6379/0`,
+   `APP_ENV=production`, `JWT_SECRET` and the vault encryption key
+   (**copied unchanged from the droplet**), `BILLING_PROVIDER=razorpay` + keys +
+   webhook secret, `EMAIL_PROVIDER=ses` + `EMAIL_FROM_ADDRESS` (no AWS keys —
+   the instance role supplies credentials), a **new** `PLATFORM_ADMIN_TOKEN`.
+2. GitHub repo settings (one-time): variable `AWS_DEPLOY_ROLE_ARN`
+   (`tofu output github_deploy_role_arn`) and variable `API_HOSTNAMES`
+   (comma or space separated — start with the rehearsal host only).
+
+Deploy flow (push to `main` after CI, or **Actions → Deploy (AWS) → Run
+workflow**): build arm64 image on a native runner → push to ECR as the git SHA →
+SSM: write config, pull, **run migrations with the new image while the old
+containers still serve**, switch, health-check, and **auto-roll-back to the
+previous image if unhealthy**. A failed migration aborts before anything is
+replaced. The workflow is inert until `AWS_DEPLOY_ROLE_ARN` is set.
+
+Rollback / redeploy an older build: run the workflow with `image_tag` = an
+existing git SHA — it is already in ECR, so it is deployed without rebuilding.
+
+Note: migrations here are the idempotent `scripts/migrate.py` runner (no down
+migrations), so an image rollback does not undo schema changes — they are additive.
+
 ## Not in this stack (follow-ups)
-- `docker-compose.aws.yml` (image from ECR, no db service) + Caddyfile
-- GitHub Actions: build arm64 → ECR → SSM deploy (`AWS_DEPLOY_ROLE_ARN` repo var)
 - SES: verify the sender domain + request production access (account is in sandbox)
 - The monthly budget lives in Mayva's stack ($50); ~$59/mo expected with this — raise it
-- DNS cutover for the API hostname (do **not** repoint until the rehearsal passes)
+- Migration rehearsal on a temporary hostname, then the DNS cutover (do **not**
+  repoint the real API hostname until the rehearsal passes)
+- Docs: `docs/deploy-digitalocean.md` and the architecture doc still describe the
+  droplet; update them (and retire the droplet notes) after cutover

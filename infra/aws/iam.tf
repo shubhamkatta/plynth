@@ -108,6 +108,7 @@ resource "aws_iam_role_policy" "github_deploy" {
           "ecr:PutImage",
           "ecr:BatchGetImage",
           "ecr:GetDownloadUrlForLayer",
+          "ecr:DescribeImages", # the workflow skips the build when the SHA is already in ECR (redeploy / rollback)
         ]
         Resource = aws_ecr_repository.plynth.arn
       },

@@ -1,0 +1,98 @@
+# plynth on AWS (standalone — NOT an overlay on docker-compose.yml).
+#
+# Runs on the box from infra/aws: Caddy + API + worker + Redis. Postgres is the
+# shared RDS (DATABASE_URL in /opt/plynth/.env) — there is deliberately no `db`
+# service. The image is built in CI and pulled from ECR; nothing builds on the box.
+#
+#   cd /opt/plynth
+#   docker compose -f docker-compose.aws.yml --env-file .deploy.env up -d
+#
+# Inputs
+#   .deploy.env   PLYNTH_IMAGE=<account>.dkr.ecr.ap-south-1.amazonaws.com/plynth:<git-sha>
+#                 API_HOSTNAMES=api.corporatethings.com[,rehearsal-host]   (written by the deploy workflow)
+#   .env          application secrets (hand-managed; see infra/aws/README.md)
+#
+# Memory limits are first estimates for a 2 GB box (api+worker+redis+caddy
+# ≈ 1.3 GB, leaving headroom). Tune from `docker stats` after the rehearsal.
+
+x-app: &app
+  image: ${PLYNTH_IMAGE:?set PLYNTH_IMAGE in .deploy.env}
+  env_file: [.env]
+  restart: unless-stopped
+  environment:
+    APP_ENV: production
+    APP_DEBUG: "false"
+    APP_LOG_LEVEL: INFO
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Cache/queue/OTP store only. noeviction: arq job keys must never be evicted.
+    command: ["redis-server", "--save", "", "--appendonly", "no",
+              "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  api:
+    <<: *app
+    command:
+      - gunicorn
+      - app.main:app
+      - -k
+      - uvicorn.workers.UvicornWorker
+      - -w
+      - "2"
+      - -b
+      - 0.0.0.0:8000
+      - --access-logfile
+      - "-"
+      - --error-logfile
+      - "-"
+    expose: ["8000"]                      # internal only; Caddy reaches api:8000
+    mem_limit: 640m
+    depends_on:
+      redis: { condition: service_healthy }
+
+  worker:
+    <<: *app
+    command: ["arq", "app.tasks.worker.WorkerSettings"]
+    mem_limit: 384m
+    depends_on:
+      redis: { condition: service_healthy }
+    # arq's own probe loads the whole app, so keep it infrequent (it was a load
+    # source on the old 512 MB droplet). Overrides the image's curl /health.
+    healthcheck:
+      test: ["CMD", "arq", "app.tasks.worker.WorkerSettings", "--check"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"                         # no UDP/HTTP3: the SG only opens TCP
+    environment:
+      API_HOSTNAMES: ${API_HOSTNAMES:?set API_HOSTNAMES in .deploy.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data                  # certs live here — survives redeploys
+      - caddy_config:/config
+    mem_limit: 128m
+    depends_on: [api]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  caddy_data:
+  caddy_config:

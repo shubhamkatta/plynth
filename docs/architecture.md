@@ -266,7 +266,9 @@ provider.parse_webhook (verifies signature)
     billing.record_invoice(...)
     billing.handle_payment_failed/succeeded
     audit(webhook.payment_*)
-  on subscription.activated / .charged / .authenticated (Razorpay):
+  signature header: `Stripe-Signature` OR `X-Razorpay-Signature` (Razorpay
+  signs with the latter; the provider's parse_webhook does the HMAC check)
+  on subscription.activated / .charged (Razorpay; `.authenticated` is ignored):
     sub = SELECT WHERE provider_subscription_id = <entity id>
     set_current_product(sub.product_id)
     billing.handle_subscription_activated  → status ACTIVE, grace cleared
@@ -483,6 +485,10 @@ Wildcard matching: `*:*` ⊃ `users:*` ⊃ `users:read`. See `_matches` in
 `WorkerSettings.cron_jobs`:
 - `task_check_grace_period` — hourly at `:05`. Moves `GRACE` subs whose
   `grace_ends_at < now()` to `SUSPENDED`.
+- `task_expire_trials` — hourly at `:15`. Moves `TRIAL` subs whose
+  `trial_end < now() - TRIAL_EXPIRY_BUFFER_DAYS` to `EXPIRED` (access cut) and
+  audits `subscription.trial_expired`. Reversible: a late
+  `subscription.charged` webhook flips `EXPIRED` back to `ACTIVE`.
 - `task_send_payment_reminders` — daily 09:00 UTC. Selects open invoices
   at `-3 / 0 / +3 / +7` days of `due_at`, dispatches via
   `app/providers/notifications.send_email`, dedupes per (invoice, offset)
@@ -528,6 +534,7 @@ from env vars / `.env`. Important keys:
 | `BILLING_PROVIDER` | `stripe` \| `mock` | `mock` |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe driver | — |
 | `DEFAULT_TRIAL_DAYS` / `GRACE_PERIOD_DAYS` | lifecycle | 14 / 7 |
+| `TRIAL_EXPIRY_BUFFER_DAYS` | days past `trial_end` before an unconverted `TRIAL` is `EXPIRED` | 1 |
 | `RATE_LIMIT_PER_MINUTE` | per IP / per path | 120 |
 | `PLATFORM_ADMIN_TOKEN` | shared secret for `/admin/*` | unset → 403 |
 | `CORS_ORIGINS` | list[str] of allowed origins | `[]` |

@@ -29,6 +29,11 @@
 
 `Subscription.has_access` returns True for trial, active, past_due, grace.
 
+A `trial` that never converts is ended by `task_expire_trials` (see below):
+`trial_end + TRIAL_EXPIRY_BUFFER_DAYS` passed with no `subscription.charged` /
+`activated` webhook → `expired` (access cut). A late charge webhook revives it
+to `active`.
+
 ## Free trial (card-on-file / UPI-AutoPay mandate)
 
 Paid signup is a **mandate-first free trial**: at checkout the customer
@@ -89,7 +94,7 @@ To add a new provider (Paddle, Lemon Squeezy, …):
 ## Webhooks
 
 `POST /api/v1/webhooks/billing`:
-- Always verify the signature header (`Stripe-Signature`). Provider's
+- Always verify the signature header (`Stripe-Signature`, or `X-Razorpay-Signature` for Razorpay). Provider's
   `parse_webhook` does it.
 - Handler is intentionally thin: persists invoice + flips subscription state.
   Heavy work belongs in arq jobs.
@@ -98,6 +103,13 @@ To add a new provider (Paddle, Lemon Squeezy, …):
 
 `task_check_grace_period` runs hourly:
 - Subscriptions in `grace` with `grace_ends_at <= now()` → `suspended`.
+
+## Trial expiry
+
+`task_expire_trials` runs hourly at `:15`:
+- Subscriptions in `trial` with `trial_end <= now() - TRIAL_EXPIRY_BUFFER_DAYS`
+  (default 1) → `expired`, audited as `subscription.trial_expired`. The buffer
+  absorbs the gap between Razorpay's first charge and its webhook.
 
 `task_send_payment_reminders` runs daily 09:00 UTC:
 - Sends reminders at -3 / 0 / +3 / +7 days relative to invoice due date.

@@ -275,3 +275,91 @@ async def test_webhook_subscription_activated_unknown_returns_200(client: AsyncC
     }).encode()
     r = await client.post("/api/v1/webhooks/billing", content=payload)
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_webhook_reads_razorpay_signature_header(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Razorpay signs with `X-Razorpay-Signature` (not `Stripe-Signature`).
+    The handler must forward whichever header is present to the provider."""
+    from app.api.v1 import webhooks as webhooks_mod
+    from app.providers.billing.base import WebhookEvent
+
+    seen: list[str] = []
+
+    class _Stub:
+        name = "razorpay"
+
+        async def parse_webhook(self, *, payload: bytes, signature: str) -> WebhookEvent:
+            seen.append(signature)
+            if signature != "good":
+                raise RuntimeError("bad signature")
+            return WebhookEvent(id="evt_x", type="noop.event", data={})
+
+    monkeypatch.setattr(webhooks_mod, "get_billing_provider", lambda: _Stub())
+
+    ok = await client.post(
+        "/api/v1/webhooks/billing", content=b"{}",
+        headers={"X-Razorpay-Signature": "good"},
+    )
+    assert ok.status_code == 200
+    bad = await client.post(
+        "/api/v1/webhooks/billing", content=b"{}",
+        headers={"X-Razorpay-Signature": "nope"},
+    )
+    assert bad.status_code == 400
+    stripe = await client.post(
+        "/api/v1/webhooks/billing", content=b"{}",
+        headers={"Stripe-Signature": "good"},
+    )
+    assert stripe.status_code == 200
+    assert seen == ["good", "nope", "good"]
+
+
+@pytest.mark.asyncio
+async def test_expire_lapsed_trials_sweeps_only_lapsed_trials(client: AsyncClient) -> None:
+    """TRIAL past `trial_end + buffer` → EXPIRED (access cut) with an audit
+    entry; in-window trials and non-TRIAL subscriptions are untouched; a late
+    `subscription.charged` webhook revives an expired one."""
+    from app.services import subscription as sub_svc
+
+    lapsed = await register_tenant(client, slug="lapsed-co")
+    fresh = await register_tenant(client, slug="fresh-co")
+    assert lapsed and fresh
+    lapsed_sub = await _subscription_for_tenant("lapsed-co")
+    fresh_sub = await _subscription_for_tenant("fresh-co")
+
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            row = await db.get(Subscription, lapsed_sub.id)
+            row.status = SubscriptionStatus.TRIAL
+            row.trial_end = datetime.now(UTC) - timedelta(days=5)
+            row.provider_subscription_id = "sub_lapsed_1"
+            keep = await db.get(Subscription, fresh_sub.id)
+            keep.status = SubscriptionStatus.TRIAL
+            keep.trial_end = datetime.now(UTC) + timedelta(days=5)
+
+    async with session_scope() as db:
+        n = await sub_svc.expire_lapsed_trials(db)
+    assert n >= 1
+
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            assert (await db.get(Subscription, lapsed_sub.id)).status == SubscriptionStatus.EXPIRED
+            assert not (await db.get(Subscription, lapsed_sub.id)).has_access
+            assert (await db.get(Subscription, fresh_sub.id)).status == SubscriptionStatus.TRIAL
+
+    # Idempotent: a second sweep finds nothing new for these rows.
+    async with session_scope() as db:
+        assert await sub_svc.expire_lapsed_trials(db) == 0
+
+    # A late first-charge webhook reactivates it.
+    payload = json.dumps({
+        "id": "evt_late_charge", "type": "subscription.charged",
+        "data": {"subscription": {"entity": {"id": "sub_lapsed_1"}}},
+    }).encode()
+    assert (await client.post("/api/v1/webhooks/billing", content=payload)).status_code == 200
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            assert (await db.get(Subscription, lapsed_sub.id)).status == SubscriptionStatus.ACTIVE

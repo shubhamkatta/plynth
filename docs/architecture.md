@@ -266,7 +266,12 @@ provider.parse_webhook (verifies signature)
     billing.record_invoice(...)
     billing.handle_payment_failed/succeeded
     audit(webhook.payment_*)
-  on subscription.activated / .charged / .authenticated (Razorpay):
+  also (Razorpay): .authenticated → meta.mandate_authorized_at (status stays TRIAL)
+                   .pending → PAST_DUE · .halted → GRACE · .cancelled → CANCELLED
+                   (a late .charged never revives a CANCELLED sub)
+  signature header: `Stripe-Signature` OR `X-Razorpay-Signature` (Razorpay
+  signs with the latter; the provider's parse_webhook does the HMAC check)
+  on subscription.activated / .charged (Razorpay; `.authenticated` is ignored):
     sub = SELECT WHERE provider_subscription_id = <entity id>
     set_current_product(sub.product_id)
     billing.handle_subscription_activated  → status ACTIVE, grace cleared
@@ -287,6 +292,9 @@ id is read from the nested `payload.subscription.entity.id`.
 ```
 app/
   main.py                          FastAPI factory · lifespan · middleware
+  api/pages.py                     hosted invite-accept page (GET /invite)
+  services/invite.py               invite create → preview → accept
+  providers/notifications.py       email: `log` or Amazon SES (templates inline)
   core/
     config.py                      Settings (pydantic-settings)
     logging.py                     structlog → JSON stdout
@@ -408,6 +416,7 @@ stable constraint names.
 | `roles` | `product_id`, `tenant_id NULL`, `name`, `is_system` | `uq_roles_product_tenant_name`. `tenant_id NULL` = system role (owner / admin / member). |
 | `role_permissions` | `role_id`, `permission_id` | `uq_role_permissions_unique`. |
 | `user_roles` | `product_id`, `user_id`, `role_id`, `scope_tenant_id NULL` | NULL scope = applies everywhere; non-NULL = applies only when current tenant = X. |
+| `invite_tokens` | `product_id`, `tenant_id?`, `kind` (`join_tenant`\|`new_tenant`), `email`, `role_codes JSONB`, `plan_code?`, `token_hash` (SHA-256), `expires_at`, `accepted_at`, `revoked_at`, `invited_by` | `uq_invite_tokens_token_hash`. Migration `0013_invite_tokens`. Re-inviting an email revokes older pending invites. |
 | `plans` | `product_id`, `code`, `price_cents`, `currency`, `interval`, `trial_days`, `is_public`, `provider_refs JSONB` | `uq_plans_product_code`. `provider_refs.stripe = "price_..."` etc. |
 | `plan_features` | `plan_id`, `feature_key`, `limit_value`, `credit_amount` | `uq_plan_features_unique`. `credit_amount` granted at each period start. |
 | `subscriptions` | `product_id`, `tenant_id`, `plan_id`, `status`, `current_period_*`, `trial_end`, `grace_ends_at`, `provider*` | `uq_subscriptions_tenant`. Status FSM in § 3.4 / `docs/billing.md`. |
@@ -483,6 +492,10 @@ Wildcard matching: `*:*` ⊃ `users:*` ⊃ `users:read`. See `_matches` in
 `WorkerSettings.cron_jobs`:
 - `task_check_grace_period` — hourly at `:05`. Moves `GRACE` subs whose
   `grace_ends_at < now()` to `SUSPENDED`.
+- `task_expire_trials` — hourly at `:15`. Moves `TRIAL` subs whose
+  `trial_end < now() - TRIAL_EXPIRY_BUFFER_DAYS` to `EXPIRED` (access cut) and
+  audits `subscription.trial_expired`. Reversible: a late
+  `subscription.charged` webhook flips `EXPIRED` back to `ACTIVE`.
 - `task_send_payment_reminders` — daily 09:00 UTC. Selects open invoices
   at `-3 / 0 / +3 / +7` days of `due_at`, dispatches via
   `app/providers/notifications.send_email`, dedupes per (invoice, offset)
@@ -528,6 +541,12 @@ from env vars / `.env`. Important keys:
 | `BILLING_PROVIDER` | `stripe` \| `mock` | `mock` |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe driver | — |
 | `DEFAULT_TRIAL_DAYS` / `GRACE_PERIOD_DAYS` | lifecycle | 14 / 7 |
+| `INVITE_TTL_DAYS` | invite-token lifetime | 7 |
+| `PUBLIC_BASE_URL` | this API's public origin; fallback hosted invite-page link | `https://api.example.com` |
+| `EMAIL_PROVIDER` | `log` \| `ses` | `log` |
+| `EMAIL_FROM_ADDRESS` | verified SES sender (required for `ses`) | — |
+| `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | SES; keys optional (default AWS credential chain) | `ap-south-1` / — |
+| `TRIAL_EXPIRY_BUFFER_DAYS` | days past `trial_end` before an unconverted `TRIAL` is `EXPIRED` | 1 |
 | `RATE_LIMIT_PER_MINUTE` | per IP / per path | 120 |
 | `PLATFORM_ADMIN_TOKEN` | shared secret for `/admin/*` | unset → 403 |
 | `CORS_ORIGINS` | list[str] of allowed origins | `[]` |
@@ -663,7 +682,7 @@ architecture and contribution flow.
 - **Roles** — `GET / POST /api/v1/roles`, `PATCH /api/v1/roles/{id}`, `POST /api/v1/roles/assign`, `GET /api/v1/roles/permissions` (per-product role catalogue + global permission codes).
 - **Plans** — `GET / POST /api/v1/plans`, `PATCH /api/v1/plans/{code}` (price + currency + interval + trial + features).
 - **Subscriptions** — `GET /api/v1/subscriptions` (current tenant's subscription), `POST /api/v1/subscriptions/{purchase,change,cancel}` with proration / at-period-end semantics.
-- **Billing checkout** — `POST /api/v1/billing/checkout` (JWT + `subscriptions:purchase`, body `{plan_code}`). Runs the purchase/subscribe path and returns the provider's hosted authorization URL for a browser redirect: `{"url": "<razorpay short_url>", "subscription_id": "<provider id>"}` for a paid plan, or `{"url": null, "status": "active"}` for a free/$0 plan (already activated, no payment). Powers the Acme marketing-site paid-signup step; reuses `subscription.purchase`. **A paid plan starts a card-on-file free trial** — the provider subscription is created with a future `start_at` (`trial_days`, default 14) so the mandate is authorized now but the first charge is deferred to trial end; the subscription lands in `trial` (not `active`) and flips to `active` via the `subscription.charged/.activated` webhook. A pre-existing local trial is honoured (single trial, charged once) rather than stacked. See `docs/billing.md`.
+- **Billing checkout** — `POST /api/v1/billing/checkout` (JWT + `subscriptions:purchase`, body `{plan_code}`). Runs the purchase/subscribe path and returns the provider's hosted authorization URL for a browser redirect: `{"url": "<razorpay short_url>", "subscription_id": "<provider id>"}` for a paid plan, or `{"url": null, "status": "active"}` for a free/$0 plan (already activated, no payment). Powers the Acme marketing-site paid-signup step; reuses `subscription.purchase`. **A paid plan starts a card-on-file free trial** — the provider subscription is created with a future `start_at` (`trial_days`; Acme paid plans seed 30, config default 14) so the mandate is authorized now but the first charge is deferred to trial end; the subscription lands in `trial` (not `active`) and flips to `active` via the `subscription.charged/.activated` webhook. A pre-existing local trial is honoured (single trial, charged once) rather than stacked. See `docs/billing.md`.
 - **Credits** — `GET /api/v1/credits/wallets`, `GET /api/v1/credits/ledger?limit=N`, `POST /api/v1/credits/grant` (manual top-up with idempotency reference).
 - **Audit** — `GET /api/v1/credits/ledger` as stand-in until `/api/v1/audit` ships.
 - **Dashboard / Settings** — local config + session inspection only.
@@ -751,6 +770,12 @@ Grouped by typical Electron use case. Full bodies + headers in
 | Log out (current device) | `POST /api/v1/auth/logout` | Pass current refresh token |
 | Log out everywhere | `POST /api/v1/auth/logout` | `{ all_sessions: true }` |
 | Change password | `POST /api/v1/auth/password` | Revokes all refresh tokens |
+| Invite a teammate (join caller's tenant) | `POST /api/v1/users/invites` | `users:write`. Emails a single-use link; body `{email, full_name?, role_codes?, plan_code?}`. Response `link` only outside production |
+| Invite a prospect (gets OWN tenant) | `POST /api/v1/admin/products/{slug}/invites` | Platform-admin token. Same body minus `role_codes`; `kind=new_tenant` |
+| Preview an invite (public) | `POST /api/v1/auth/invites/preview` | `{token}` → `{email, full_name, kind, plan_code, product_name, expires_at}`; POST keeps token out of URLs |
+| Accept an invite (public) | `POST /api/v1/auth/invites/accept` | `{token, password, full_name?}` → TokenPair. Single use; marks email verified |
+| Hosted accept page | `GET /invite?token=…` | Static HTML fallback for products without `settings.app_url` (not in OpenAPI) |
+| Poll mandate status after checkout | `GET /api/v1/subscription` | `mandate_authorized` flips true on Razorpay `subscription.authenticated` |
 | Read current user / permissions | `GET /api/v1/auth/me` | Includes `mfa_enabled` + `mfa_method` |
 | Invite teammate (B2B / family B2C) | `POST /api/v1/users` | Needs `users:write` |
 | Manage teammates | `GET/PATCH/DELETE /api/v1/users` + `/users/{id}/activate\|deactivate` | |

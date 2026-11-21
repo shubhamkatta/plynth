@@ -27,6 +27,7 @@ def _serialise(sub: Subscription) -> SubscriptionResponse:
         current_period_end=sub.current_period_end, trial_end=sub.trial_end,
         grace_ends_at=sub.grace_ends_at, cancel_at_period_end=sub.cancel_at_period_end,
         cancelled_at=sub.cancelled_at, has_access=sub.has_access,
+        mandate_authorized=bool(sub.meta.get("mandate_authorized_at")),
     )
 
 

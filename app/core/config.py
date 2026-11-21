@@ -61,6 +61,26 @@ class Settings(BaseSettings):
     # Tenancy / billing lifecycle
     default_trial_days: int = 14
     grace_period_days: int = 7
+    # Days past `trial_end` a TRIAL subscription may linger before the sweep
+    # marks it EXPIRED. Absorbs the delay between Razorpay's first charge at
+    # `start_at` and its `subscription.charged` webhook reaching us.
+    trial_expiry_buffer_days: int = 1
+
+    # Invites
+    invite_ttl_days: int = 7
+    # Public origin of THIS API. Used to build the fallback hosted invite page
+    # link (`<public_base_url>/invite?token=…`) for products without
+    # `settings.app_url`.
+    public_base_url: str = "https://api.example.com"
+
+    # Transactional email. `log` (default) only logs; `ses` sends via Amazon
+    # SES. Credentials resolve via the standard AWS chain (instance role / env)
+    # unless AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are set explicitly.
+    email_provider: Literal["log", "ses"] = "log"
+    email_from_address: str = ""
+    aws_region: str = "ap-south-1"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
 
     # Rate limit
     rate_limit_per_minute: int = 120

@@ -37,6 +37,13 @@ async def task_check_grace_period(ctx: dict[str, Any]) -> int:
     return n
 
 
+async def task_expire_trials(ctx: dict[str, Any]) -> int:
+    async with session_scope() as db:
+        n = await sub_svc.expire_lapsed_trials(db)
+    log.info("task.trials.expired", expired=n)
+    return n
+
+
 async def task_send_payment_reminders(ctx: dict[str, Any]) -> int:
     async with session_scope() as db:
         return await payment_reminders.dispatch_due_reminders(db, now=datetime.now(UTC))
@@ -46,10 +53,12 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(str(settings.redis_url))
     on_startup = startup
     on_shutdown = shutdown
-    functions = [task_check_grace_period, task_send_payment_reminders]
+    functions = [task_check_grace_period, task_expire_trials, task_send_payment_reminders]
     cron_jobs = [
         # Hourly sweep — keep cheap.
         cron(task_check_grace_period, hour=set(range(24)), minute={5}),
+        # Hourly at :15 — end TRIALs that never converted.
+        cron(task_expire_trials, hour=set(range(24)), minute={15}),
         # Daily 09:00 UTC reminder run.
         cron(task_send_payment_reminders, hour={9}, minute={0}),
     ]

@@ -60,3 +60,18 @@ their fresh balance immediately.
 - `credit_amount` — bucket that drains over time. Enforced by `consume()`.
 
 Use `limit_value` for capacity, `credit_amount` for metered actions.
+
+## Acme feature keys (`acme-practice`)
+
+`scripts/seed_acme.py` grants two metered wallets per plan via `PlanFeature`:
+
+| `feature_key` | Meters | Tiers |
+| --- | --- | --- |
+| `ai_messages` | outbound AI messages | per plan; none on Essentials / unmetered on Clinic + Beta |
+| `wa_messages` | outbound WhatsApp sends from the inbox | per plan (placeholder quotas — confirm); none on Clinic + Beta |
+
+`credit.consume` raises `NotFound` when the wallet doesn't exist, so a tenant
+without `wa_messages` cannot be metered. Plan credits only grant on trial
+start / purchase / plan change / renewal, so the seed also runs
+`_backfill_wa_wallets` for tenants that subscribed earlier (stable
+per-subscription `reference`, so re-runs never double-grant).

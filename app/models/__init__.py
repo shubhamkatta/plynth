@@ -10,6 +10,7 @@ from app.models.component import (
 from app.models.credit import CreditLedger, CreditWallet
 from app.models.env_var import ProductEnvVar
 from app.models.idempotency import IdempotencyKey
+from app.models.invite import InviteToken
 from app.models.invoice import Invoice
 from app.models.job import Job
 from app.models.permission import Permission, RolePermission
@@ -29,6 +30,7 @@ __all__ = [
     "CreditLedger",
     "CreditWallet",
     "IdempotencyKey",
+    "InviteToken",
     "Invoice",
     "Job",
     "PasswordResetToken",

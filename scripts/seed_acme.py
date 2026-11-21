@@ -26,6 +26,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import session_scope
 from app.core.logging import configure_logging, get_logger
@@ -58,6 +59,13 @@ DEV_PLAN_CODE = "practice"
 # the `unlimited_ai` component is active (Clinic tier).
 AI_FEATURE_KEY = "ai_messages"
 
+# WhatsApp outbound sends are metered under this feature_key (1 credit per
+# message the therapist sends from the inbox). Acme calls
+# `POST /credits/service/consume` against this wallet; without a wallet the
+# consume 404s (`credit._lock_wallet`), so every plan that can send WhatsApp
+# must grant it (see `_ensure_plans` + `_backfill_wa_wallets`).
+WA_FEATURE_KEY = "wa_messages"
+
 # --------------------------------------------------------------------------
 # Plan catalog. Prices are per-region on the marketing site; plynth stores a
 # single default (USD cents). Per-region plan variants are NOT modelled here
@@ -79,10 +87,10 @@ AI_FEATURE_KEY = "ai_messages"
 # So the annual cadence hinges on `provider_refs["razorpay"]` pointing at an
 # ANNUAL Razorpay plan_id (see TODO(billing) below).
 #
-# Paid plans run a 14-day card-on-file / UPI-AutoPay-mandate free trial (both
-# cadences): `trial_days=14` means the customer authorizes a recurring mandate
+# Paid plans run a 30-day card-on-file / UPI-AutoPay-mandate free trial (both
+# cadences): `trial_days=30` means the customer authorizes a recurring mandate
 # at checkout, is NOT charged during the trial, and the first deduction lands
-# after 14 days — then recurs monthly OR yearly per the plan's interval
+# after 30 days — then recurs monthly OR yearly per the plan's interval
 # (see app/services/subscription.py::purchase; the deferral is cadence-agnostic).
 #
 # TODO(billing): `provider_refs` maps a provider name → its plan id (Razorpay
@@ -103,10 +111,12 @@ PLANS: list[dict] = [
         "description": "Booking + typed notes. The baseline front desk.",
         "price_cents": 2900,
         "interval": BillingInterval.MONTH,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         # No AI on Essentials — 0 documents the intent (no wallet is created).
         "ai_messages": Decimal("0"),
+        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        "wa_messages": Decimal("200"),
         "provider_refs": {"razorpay": "plan_TNZwgF5fQwPTPO"},  # live monthly
     },
     {
@@ -115,9 +125,11 @@ PLANS: list[dict] = [
         "description": "Booking + typed notes. The baseline front desk. Billed yearly (2 months free).",
         "price_cents": 29000,      # 10× monthly — "2 months free"
         "interval": BillingInterval.YEAR,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("0"),
+        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        "wa_messages": Decimal("200"),
         "provider_refs": {"razorpay": "plan_TNZwhTa4K96xZF"},  # live annual
     },
     {
@@ -126,9 +138,11 @@ PLANS: list[dict] = [
         "description": "AI receptionist, voice notes, payment follow-ups, weekly digest.",
         "price_cents": 7900,
         "interval": BillingInterval.MONTH,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("500"),
+        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        "wa_messages": Decimal("1000"),
         "provider_refs": {"razorpay": "plan_TNZwgi92BT1iCQ"},  # live monthly
     },
     {
@@ -137,9 +151,11 @@ PLANS: list[dict] = [
         "description": "AI receptionist, voice notes, payment follow-ups, weekly digest. Billed yearly (2 mo free).",
         "price_cents": 79000,      # 10× monthly — "2 months free"
         "interval": BillingInterval.YEAR,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("500"),
+        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        "wa_messages": Decimal("1000"),
         "provider_refs": {"razorpay": "plan_TNZwhu3TVqwUBX"},  # live annual
     },
     {
@@ -148,9 +164,11 @@ PLANS: list[dict] = [
         "description": "Everything in Practice plus the follow-up agent and analytics.",
         "price_cents": 19900,
         "interval": BillingInterval.MONTH,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("2000"),
+        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        "wa_messages": Decimal("3000"),
         "provider_refs": {"razorpay": "plan_TNZwh4slGhczxl"},  # live monthly
     },
     {
@@ -159,9 +177,11 @@ PLANS: list[dict] = [
         "description": "Everything in Practice plus the follow-up agent and analytics. Billed yearly (2 months free).",
         "price_cents": 199000,     # 10× monthly — "2 months free"
         "interval": BillingInterval.YEAR,
-        "trial_days": 14,
+        "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("2000"),
+        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        "wa_messages": Decimal("3000"),
         "provider_refs": {"razorpay": "plan_TNZwiM5Lygue7N"},  # live annual
     },
     {
@@ -175,6 +195,7 @@ PLANS: list[dict] = [
         # No ai_messages grant — Clinic relies on the `unlimited_ai`
         # component and Acme skips credit consumption entirely.
         "ai_messages": None,
+        "wa_messages": None,  # unmetered tier: no wallet granted
     },
     {
         "code": "beta",
@@ -186,6 +207,7 @@ PLANS: list[dict] = [
         "is_public": False,        # not shown in the public /plans list
         # Unlimited AI via the `unlimited_ai` component (below) — no quota.
         "ai_messages": None,
+        "wa_messages": None,  # unmetered tier: no wallet granted
     },
 ]
 
@@ -281,22 +303,26 @@ async def _ensure_plans(db: AsyncSession, product_id: UUID) -> dict[str, Plan]:
                     plan.provider_refs = {**plan.provider_refs, **spec["provider_refs"]}
             by_code[plan.code] = plan
 
-            # Ensure the ai_messages PlanFeature carries the right grant.
-            if spec["ai_messages"] is not None:
+            # Ensure each metered PlanFeature (ai_messages, wa_messages)
+            # carries the right grant. A None spec value = unmetered/no grant.
+            for feature_key in (AI_FEATURE_KEY, WA_FEATURE_KEY):
+                grant = spec.get(feature_key)
+                if grant is None:
+                    continue
                 feat = await db.scalar(
                     select(PlanFeature).where(
                         PlanFeature.plan_id == plan.id,
-                        PlanFeature.feature_key == AI_FEATURE_KEY,
+                        PlanFeature.feature_key == feature_key,
                     )
                 )
                 if feat is None:
                     db.add(PlanFeature(
                         product_id=product_id, plan_id=plan.id,
-                        feature_key=AI_FEATURE_KEY,
-                        limit_value=None, credit_amount=spec["ai_messages"],
+                        feature_key=feature_key,
+                        limit_value=None, credit_amount=grant,
                     ))
                 else:
-                    feat.credit_amount = spec["ai_messages"]
+                    feat.credit_amount = grant
 
         # Additive only — legacy plans (free/pro/enterprise/…) are intentionally
         # LEFT UNTOUCHED. The 'acme' product slug is shared with an earlier
@@ -395,6 +421,45 @@ async def _ensure_dev_subscription(
     return sub
 
 
+async def _backfill_wa_wallets(db: AsyncSession, *, product_id: UUID) -> int:
+    """Grant the `wa_messages` allotment to tenants that subscribed BEFORE the
+    plan carried it. Plan credits otherwise only grant on trial start /
+    purchase / plan change / renewal, so existing tenants would have no wallet
+    and Acme's send-metering would 404. Idempotent: the reference is stable
+    per (subscription, plan), so re-runs never double-grant. Returns the number
+    of subscriptions examined."""
+    n = 0
+    with bypass_product(), bypass_tenant():
+        subs = (
+            await db.scalars(
+                select(Subscription).where(Subscription.product_id == product_id)
+            )
+        ).all()
+        for sub in subs:
+            if not sub.has_access:
+                continue
+            plan = await db.scalar(
+                select(Plan)
+                .options(selectinload(Plan.features))
+                .where(Plan.id == sub.plan_id)
+            )
+            if plan is None:
+                continue
+            feat = next(
+                (f for f in plan.features if f.feature_key == WA_FEATURE_KEY), None
+            )
+            if feat is None or not feat.credit_amount or feat.credit_amount <= 0:
+                continue
+            await credit_svc.grant(
+                db, tenant_id=sub.tenant_id, product_id=product_id,
+                feature_key=WA_FEATURE_KEY, amount=Decimal(feat.credit_amount),
+                reason=f"plan:{plan.code}",
+                reference=f"backfill:{sub.id}:{plan.code}:{WA_FEATURE_KEY}",
+            )
+            n += 1
+    return n
+
+
 async def main() -> None:
     configure_logging()
     async with session_scope() as db:
@@ -432,6 +497,8 @@ async def main() -> None:
 
         plans = await _ensure_plans(db, product.id)
         await _ensure_components(db, product.id)
+        backfilled = await _backfill_wa_wallets(db, product_id=product.id)
+        log.info("seed_acme.wa_backfill", subscriptions=backfilled)
 
         if tenant is None:
             log.warning(

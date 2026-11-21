@@ -240,7 +240,10 @@ Anchored to UI actions, not REST verbs. Full request bodies in
 | Sign out current session | `POST /api/v1/auth/logout` |
 | Sign out everywhere | `POST /api/v1/auth/logout` `{all_sessions: true}` |
 | Change password | `POST /api/v1/auth/password` |
-| Forgot password | `POST /api/v1/auth/password/forgot` `{email}` — always returns 200 (no enumeration). Non-prod responses include the raw `reset_token` for testing. Prod returns just `{ok: true}` — the platform's notification provider stub is what you'll wire to email a link `<your-app>/reset?token=…`. |
+| Forgot password | `POST /api/v1/auth/password/forgot` `{email}` — always returns 200 (no enumeration). Non-prod responses include the raw `reset_token` for testing. Prod returns just `{ok: true}` and emails `<product settings.app_url>/reset?token=…` (needs `EMAIL_PROVIDER=ses`; skipped with a warning if the product has no `app_url`). |
+| Invite a teammate | `POST /api/v1/users/invites` `{email, full_name?, role_codes?}` (`users:write`) — emails a single-use link to `<app_url>/accept-invite?token=…` (or the hosted `/invite` page). |
+| Invite a prospect | `POST /api/v1/admin/products/{slug}/invites` (platform-admin) — invitee gets their own new tenant. |
+| Accept an invite | `POST /api/v1/auth/invites/preview` `{token}` then `POST /api/v1/auth/invites/accept` `{token, password, full_name?}` → TokenPair. Unknown/expired/used tokens all return the same 404. |
 | Configure refresh-token TTL (admin) | `PATCH /api/v1/admin/products/{slug}` `{settings: {auth: {refresh_ttl_days: <1..365>}}}` — overrides the platform default for this product only. Honored by /login, /refresh, /register, /auth/google. Out-of-range values fall back to platform default. |
 | Reset password (consume token) | `POST /api/v1/auth/password/reset` `{token, new_password}` — single-use, expires in 1 hour. Revokes every existing refresh token. |
 | Sign in with Google (OAuth2) | `POST /api/v1/auth/google` `{code, redirect_uri}` — you run the redirect dance on your side, then forward the `code` here. Returns `TokenPair`. New users are rejected unless the product opts in to `settings.features.google_auto_provision = true` (then a B2C-style tenant is created on first login). Platform-wide config: `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` env vars; unset → 401 "not configured". |

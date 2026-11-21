@@ -73,6 +73,11 @@ SYSTEM_PERMISSIONS: list[tuple[str, str]] = [
     ("gdpr:export", "Export a client's personal data (GDPR subject-access)"),
     ("gdpr:erase", "Erase a client's personal data (GDPR right-to-erasure)"),
     ("settings:manage", "Manage practice settings"),
+    ("dashboard:read", "Read the practice dashboard (today view)"),
+    ("analytics:read", "Read practice analytics + messaging health"),
+    ("alert:read", "Read practice alerts (e.g. crisis escalations)"),
+    ("message:read", "Read individual messages"),
+    ("staff:manage", "Manage practice staff (add / edit / deactivate practitioners)"),
     # Patient portal (end-patients provisioned as plynth users). Deliberately
     # narrow — a patient reads only their own portal / history.
     ("portal:read", "Read own patient portal (history, upcoming appointments)"),
@@ -88,6 +93,9 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "subscriptions:change", "subscriptions:cancel",
         "credits:read", "credits:grant",
         "audit:read",
+        # Acme (and any product with staff): admins manage who works in the
+        # tenant. Deliberately NOT in the practitioner template.
+        "staff:manage",
         # Jobs + Storage: admin gets the full surface.
         "jobs:read", "jobs:write", "jobs:cancel",
         "storage:read", "storage:write", "storage:delete",
@@ -130,6 +138,10 @@ PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
             "digest:read",
             "gdpr:export", "gdpr:erase",
             "audit:read",
+            # Index route + messaging-health daily check + crisis alerts +
+            # message reads + plan display. All read-only. NOT staff:manage.
+            "dashboard:read", "analytics:read", "alert:read", "message:read",
+            "subscriptions:read",
         ],
         # Front-desk help: see clients, run the calendar, read the inbox.
         "assistant": [

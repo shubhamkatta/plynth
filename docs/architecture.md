@@ -771,7 +771,7 @@ Grouped by typical Electron use case. Full bodies + headers in
 | Log out everywhere | `POST /api/v1/auth/logout` | `{ all_sessions: true }` |
 | Change password | `POST /api/v1/auth/password` | Revokes all refresh tokens |
 | Invite a teammate (join caller's tenant) | `POST /api/v1/users/invites` | `users:write`. Emails a single-use link; body `{email, full_name?, role_codes?, plan_code?}`. Response `link` only outside production |
-| Invite a prospect (gets OWN tenant) | `POST /api/v1/admin/products/{slug}/invites` | Platform-admin token. Same body minus `role_codes`; `kind=new_tenant` |
+| Invite a prospect (gets OWN tenant) | `POST /api/v1/admin/products/{slug}/invites` | Platform-admin token. Same body minus `role_codes`, plus `send_email` (default true); `kind=new_tenant`. **Always returns `link`**, and `send_email=false` skips the email — the manual delivery path while SES is in sandbox. Tenant-admin invites still return `link` only outside production |
 | Preview an invite (public) | `POST /api/v1/auth/invites/preview` | `{token}` → `{email, full_name, kind, plan_code, product_name, expires_at}`; POST keeps token out of URLs |
 | Accept an invite (public) | `POST /api/v1/auth/invites/accept` | `{token, password, full_name?}` → TokenPair. Single use; marks email verified |
 | Hosted accept page | `GET /invite?token=…` | Static HTML fallback for products without `settings.app_url` (not in OpenAPI) |

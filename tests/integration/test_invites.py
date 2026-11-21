@@ -130,3 +130,53 @@ async def test_hosted_invite_page_is_static_and_hardened(client: AsyncClient) ->
     assert r.headers["cache-control"] == "no-store"
     assert r.headers["referrer-policy"] == "no-referrer"
     assert "abc" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_prospect_invite_returns_link_in_production_and_can_skip_email(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Platform-admin prospect invites ALWAYS return the link (even in
+    production) and `send_email=false` sends nothing — the path used while SES
+    is in sandbox. Tenant-admin invites still hide the link in production."""
+    from app.core.config import settings
+    from app.providers import notifications
+
+    sent: list[str] = []
+
+    async def _record(*, to: str, template: str, context: dict) -> None:
+        sent.append(to)
+
+    monkeypatch.setattr(notifications, "send_email", _record)
+    monkeypatch.setattr(settings, "app_env", "production")
+    assert settings.is_production
+
+    r = await client.post(
+        "/api/v1/admin/products/producta/invites",
+        json={"email": "manual@example.com", "send_email": False}, headers=ADMIN,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["link"] and "token=" in r.json()["link"]
+    assert sent == []                      # nothing emailed
+
+    # Default still emails.
+    r2 = await client.post(
+        "/api/v1/admin/products/producta/invites",
+        json={"email": "emailed@example.com"}, headers=ADMIN,
+    )
+    assert r2.status_code == 201 and sent == ["emailed@example.com"]
+
+    # The link works end to end.
+    acc = await client.post(
+        "/api/v1/auth/invites/accept",
+        json={"token": _token(r.json()["link"]), "password": PW},
+    )
+    assert acc.status_code == 201, acc.text
+
+    # Tenant-admin invites still withhold the link in production.
+    tok = await register_tenant(client, slug="prodco")
+    t = await client.post(
+        "/api/v1/users/invites", json={"email": "t@prodco.example.com"},
+        headers=auth(tok["access_token"]),
+    )
+    assert t.status_code == 201 and t.json()["link"] is None

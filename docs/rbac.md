@@ -38,6 +38,7 @@ users get 403s. Newer codes: `dashboard:read`, `analytics:read`, `alert:read`,
 | `owner` | `*:*` (includes `settings:manage`, `staff:manage`) |
 | `admin` | `staff:manage` (plus the tenant/user/billing set above) |
 | `practitioner` | clinical set, `inbox:read/send`, `dashboard:read`, `analytics:read`, `alert:read`, `message:read`, `subscriptions:read` — **not** `staff:manage`, `settings:manage` or `subscriptions:change` |
+| `clinic_admin` | office manager: `settings:manage`, `staff:manage`, `subscriptions:read/change`, `payment:read/manage`, `availability:read/manage`, `client:read/create/update`, `dashboard:read`, `analytics:read`, `digest:read`, `alert:read`. **Excludes** `note:*`, `message:read`, `inbox:*`, `approval:decide`, `gdpr:*` (special-category data / clinical judgement) |
 | `assistant` | `client:read`, booking, `inbox:read` |
 | `patient` | `portal:read`, `booking:create` only |
 

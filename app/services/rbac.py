@@ -149,6 +149,21 @@ PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
             "booking:create", "booking:read", "booking:manage",
             "inbox:read",
         ],
+        # Office manager / clinic administrator (not a clinician). Runs the
+        # practice: settings, staff, billing, calendar, client records, and the
+        # read-only operational views. DELIBERATELY EXCLUDES special-category data
+        # and clinical judgement: note:* (session notes), message:read (encrypted
+        # message bodies), inbox:send (the therapist's own voice), approval:decide
+        # (AI drafts), gdpr:* (owner-only). client:read is included (booking needs
+        # it) although a client list is itself sensitive.
+        "clinic_admin": [
+            "settings:manage", "staff:manage",
+            "subscriptions:read", "subscriptions:change",
+            "payment:read", "payment:manage",
+            "availability:read", "availability:manage",
+            "client:read", "client:create", "client:update",
+            "dashboard:read", "analytics:read", "digest:read", "alert:read",
+        ],
         # End-patient portal login. DELIBERATELY NARROW: a patient may read
         # only their own portal and book their own appointments. No access to
         # other patients, clinical notes, sessions, inbox, payments, audit,

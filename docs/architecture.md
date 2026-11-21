@@ -496,6 +496,14 @@ Wildcard matching: `*:*` ⊃ `users:*` ⊃ `users:read`. See `_matches` in
   `trial_end < now() - TRIAL_EXPIRY_BUFFER_DAYS` to `EXPIRED` (access cut) and
   audits `subscription.trial_expired`. Reversible: a late
   `subscription.charged` webhook flips `EXPIRED` back to `ACTIVE`.
+- `task_refill_credits` — hourly at `:25`. Monthly credit refill: for every
+  wallet whose period has ended (`period_end`, or `created_at + 30d` when unset)
+  on a subscription that still has access, expire leftovers (EXPIRY ledger entry)
+  and grant the plan's current `PlanFeature.credit_amount` (GRANT, reference
+  `refill:<wallet>:<period-end-date>` → idempotent), then start a new 30-day
+  period. Applies to monthly **and** yearly plans (billing cadence does not
+  matter). Skips subs without access and trials past `trial_end`; no catch-up
+  stacking after downtime. Audit `credits.refilled`.
 - `task_send_payment_reminders` — daily 09:00 UTC. Selects open invoices
   at `-3 / 0 / +3 / +7` days of `due_at`, dispatches via
   `app/providers/notifications.send_email`, dedupes per (invoice, offset)

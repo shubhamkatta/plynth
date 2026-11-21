@@ -9,13 +9,14 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InsufficientCredits, NotFound
 from app.core.tenant import bypass_product, bypass_tenant
 from app.models.credit import CreditEntryType, CreditLedger, CreditWallet
 from app.models.plan import Plan, PlanFeature
+from app.models.subscription import Subscription
 from app.services import audit
 
 
@@ -200,3 +201,116 @@ async def reset_period(
             diff={"feature_key": feature_key, "expired": str(expired)},
         )
     return wallet
+
+
+# --- Monthly refill ----------------------------------------------------------
+# Plan credits used to be granted only at trial start / purchase / plan change,
+# so a wallet was a ONE-OFF grant: once spent it never refilled, on monthly and
+# yearly plans alike. The refill sweep makes every metered feature a MONTHLY
+# allowance, independent of the billing cadence (a yearly plan is charged once a
+# year but its quota still refills each month).
+REFILL_PERIOD_DAYS = 30
+
+
+async def _refill_wallet(
+    db: AsyncSession, *, wallet_id: UUID, amount: Decimal, now: datetime
+) -> bool:
+    """Expire leftovers and grant `amount` if this wallet's period has ended.
+
+    Idempotent: the grant carries a reference unique to the period being closed,
+    and the period is advanced, so re-running (or a concurrent worker) is a no-op.
+    """
+    wallet = await db.scalar(
+        select(CreditWallet).where(CreditWallet.id == wallet_id).with_for_update()
+    )
+    if wallet is None:
+        return False
+    # Wallets created before periods existed have no period_end: treat the
+    # first period as starting when the wallet was created.
+    anchor = wallet.period_end or (wallet.created_at + timedelta(days=REFILL_PERIOD_DAYS))
+    if anchor > now:
+        return False
+    reference = f"refill:{wallet.id}:{anchor.date().isoformat()}"
+    if await _was_referenced(db, wallet_id=wallet.id, reference=reference):
+        return False
+
+    expired = wallet.balance
+    if expired > 0:
+        wallet.balance = Decimal("0")
+        db.add(
+            CreditLedger(
+                product_id=wallet.product_id, tenant_id=wallet.tenant_id,
+                wallet_id=wallet.id, entry_type=CreditEntryType.EXPIRY,
+                amount=-expired, balance_after=Decimal("0"),
+                reason="period_refill", reference=f"{reference}:expiry",
+            )
+        )
+    wallet.balance += amount
+    db.add(
+        CreditLedger(
+            product_id=wallet.product_id, tenant_id=wallet.tenant_id,
+            wallet_id=wallet.id, entry_type=CreditEntryType.GRANT,
+            amount=amount, balance_after=wallet.balance,
+            reason="plan:monthly_refill", reference=reference,
+        )
+    )
+    # One refill per sweep even after long downtime — no catch-up stacking.
+    wallet.period_start = now
+    wallet.period_end = now + timedelta(days=REFILL_PERIOD_DAYS)
+    await db.flush()
+    await audit.record(
+        db, action="credits.refilled", resource_type="credit_wallet",
+        resource_id=wallet.id, tenant_id=wallet.tenant_id, product_id=wallet.product_id,
+        diff={"feature_key": wallet.feature_key, "expired": str(expired),
+              "granted": str(amount)},
+    )
+    return True
+
+
+async def refill_due_wallets(db: AsyncSession, *, now: datetime | None = None) -> int:
+    """Cross-product sweep: refill every metered wallet whose period has ended.
+
+    Only subscriptions that still have access are refilled, and a TRIAL whose
+    `trial_end` has passed is skipped (it never converted — the trial-expiry
+    sweep will end it). The amount is the plan's CURRENT PlanFeature.credit_amount.
+    Returns the number of wallets refilled.
+    """
+    now = now or datetime.now(UTC)
+    refilled = 0
+    with bypass_product(), bypass_tenant():
+        rows = (
+            await db.execute(
+                select(CreditWallet.id, Subscription, PlanFeature.credit_amount)
+                .join(
+                    Subscription,
+                    and_(
+                        Subscription.tenant_id == CreditWallet.tenant_id,
+                        Subscription.product_id == CreditWallet.product_id,
+                    ),
+                )
+                .join(
+                    PlanFeature,
+                    and_(
+                        PlanFeature.plan_id == Subscription.plan_id,
+                        PlanFeature.feature_key == CreditWallet.feature_key,
+                    ),
+                )
+                .where(PlanFeature.credit_amount > 0)
+            )
+        ).all()
+        for wallet_id, subscription, amount in rows:
+            if not subscription.has_access:
+                continue
+            if (
+                subscription.status.value == "trial"
+                and subscription.trial_end is not None
+                and subscription.trial_end <= now
+            ):
+                continue
+            if amount is None or amount <= 0:   # query filters this; keeps types honest
+                continue
+            if await _refill_wallet(
+                db, wallet_id=wallet_id, amount=Decimal(amount), now=now
+            ):
+                refilled += 1
+    return refilled

@@ -40,27 +40,16 @@ The RDS security group is owned by **Mayva's** stack, which declares its
 stack is **deleted on Mayva's next `tofu apply`**, silently cutting plynth off
 its database. So:
 
-1. Make it durable first, in `mayva-desk/infra/aws/main.tf` (their repo, their
-   review). Add a variable and a second ingress block to `aws_security_group.rds`:
-
-   ```hcl
-   variable "extra_db_client_sg_ids" {
-     description = "SGs (other stacks, e.g. plynth) allowed to reach Postgres."
-     type        = list(string)
-     default     = []
-   }
-   # inside aws_security_group.rds:
-   ingress {
-     description     = "Postgres from other stacks' app boxes"
-     from_port       = 5432
-     to_port         = 5432
-     protocol        = "tcp"
-     security_groups = var.extra_db_client_sg_ids
-   }
-   ```
-   then set `extra_db_client_sg_ids = ["<app_security_group_id output>"]` and apply
-   **that** stack with a plan reviewed for `0 to destroy` (its plan previously
-   wanted to replace the production box — the AMI pin fixed it; verify).
+1. Make it durable first. The change is ready for review on the `mayva-desk`
+   branch `chore/infra-extra-db-client-sgs`: an empty-by-default
+   `extra_db_client_sg_ids` list rendered as `dynamic "ingress"` blocks on
+   `aws_security_group.rds`. Merge it, then set
+   `extra_db_client_sg_ids = ["<app_security_group_id output>"]` in their
+   `terraform.tfvars` and apply with `-target=aws_security_group.rds` after
+   confirming the plan is exactly one new ingress rule, `0 to destroy`.
+   (A baseline plan of their stack also shows an in-place `aws_instance.app`
+   `ami (sensitive value)` update — the known marking-only diff noted in their
+   PROGRESS.md; `-target` keeps the apply off the production box entirely.)
 2. Until that is merged, a temporary CLI rule works but WILL be reverted by
    their next apply — do not rely on it past cutover:
    `aws ec2 authorize-security-group-ingress --group-id <rds sg> --protocol tcp --port 5432 --source-group <plynth app sg>`

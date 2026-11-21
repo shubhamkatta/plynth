@@ -965,6 +965,148 @@
           }
         }
       ]
+    },
+    {
+      "name": "Invites",
+      "item": [
+        {
+          "name": "Invite teammate (tenant admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"mate@example.com\",\n  \"role_codes\": [\n    \"member\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/invites",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "invites"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invite prospect (platform admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Platform-Admin-Token",
+                "value": "{{platformAdminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"prospect@example.com\",\n  \"full_name\": \"Pat\",\n  \"plan_code\": \"practice\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/products/{{productSlug}}/invites",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "products",
+                "{{productSlug}}",
+                "invites"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Preview invite (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Product-Slug",
+                "value": "{{productSlug}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<token from email>\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/invites/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "invites",
+                "preview"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Accept invite (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Product-Slug",
+                "value": "{{productSlug}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<token from email>\",\n  \"password\": \"a-long-enough-password-1\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/invites/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "invites",
+                "accept"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
     }
   ]
 }

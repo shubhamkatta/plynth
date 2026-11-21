@@ -84,7 +84,7 @@ def test_plan_catalog_ai_message_grants() -> None:
 
 def test_plan_catalog_has_monthly_and_annual_cadence_per_paid_tier() -> None:
     """Every paid tier ships a monthly and an annual plan with distinct codes,
-    the annual carrying interval=YEAR, trial_days=14, and price = 10× monthly
+    the annual carrying interval=YEAR, trial_days=30, and price = 10× monthly
     ("2 months free"). The site's yearly toggle sends the `_yearly` code."""
     by_code = {p["code"]: p for p in seed_mayva.PLANS}
     for tier in ("essentials", "practice", "concierge"):
@@ -94,9 +94,9 @@ def test_plan_catalog_has_monthly_and_annual_cadence_per_paid_tier() -> None:
         assert monthly["interval"] is BillingInterval.MONTH
         assert annual["interval"] is BillingInterval.YEAR
 
-        # Both cadences run the same 14-day deferred-charge trial.
-        assert monthly["trial_days"] == 14
-        assert annual["trial_days"] == 14
+        # Both cadences run the same 30-day deferred-charge trial.
+        assert monthly["trial_days"] == 30
+        assert annual["trial_days"] == 30
 
         # Annual is 10× monthly — "2 months free".
         assert annual["price_cents"] == monthly["price_cents"] * 10
@@ -249,7 +249,7 @@ async def test_seed_creates_monthly_and_annual_plan_rows() -> None:
         monthly, annual = plans[tier], plans[f"{tier}_yearly"]
         assert monthly.interval is BillingInterval.MONTH
         assert annual.interval is BillingInterval.YEAR
-        assert annual.trial_days == 14
+        assert annual.trial_days == 30
         assert annual.price_cents == monthly.price_cents * 10
         assert annual.is_public is True
 
@@ -283,3 +283,61 @@ async def test_reseed_applies_seed_razorpay_id_but_preserves_other_providers() -
     assert refs["razorpay"] == "plan_TNZwhu3TVqwUBX"
     # ...but the unrelated Stripe key is preserved.
     assert refs["stripe"] == "price_KEEP"
+
+
+def test_plan_catalog_wa_message_grants() -> None:
+    """Every paid tier carries a wa_messages grant (placeholder quotas — see
+    TODO(confirm) in seed_mayva); yearly matches monthly; unmetered tiers None."""
+    grants = {p["code"]: p["wa_messages"] for p in seed_mayva.PLANS}
+    for tier in ("essentials", "practice", "concierge"):
+        assert grants[tier] and grants[tier] > 0
+        assert grants[f"{tier}_yearly"] == grants[tier]
+    assert grants["clinic"] is None and grants["beta"] is None
+
+
+@pytest.mark.asyncio
+async def test_practice_tenant_gets_wa_messages_wallet_and_can_consume() -> None:
+    """Without a wa_messages wallet `credit.consume` raises NotFound — the
+    send-metering gap. The seed must create it alongside ai_messages."""
+    _product, tenant, _user = await _bootstrap_mayva_product()
+    expected = next(p for p in seed_mayva.PLANS if p["code"] == "practice")["wa_messages"]
+    async with session_scope() as db:
+        w = await credit_svc.consume(
+            db, tenant_id=tenant.id, product_id=_product.id,
+            feature_key=seed_mayva.WA_FEATURE_KEY, amount=Decimal("1"),
+        )
+        assert w.balance == expected - 1
+
+
+@pytest.mark.asyncio
+async def test_backfill_grants_wa_wallet_to_preexisting_tenant_once() -> None:
+    """A tenant subscribed before the plan carried wa_messages gets the grant
+    from the seed backfill — exactly once across re-runs."""
+    from sqlalchemy import select
+
+    from app.models.credit import CreditWallet
+
+    product, tenant, _user = await _bootstrap_mayva_product()
+    # Simulate "predates wa_messages": drop the wallet the seed just created.
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            w = await db.scalar(select(CreditWallet).where(
+                CreditWallet.tenant_id == tenant.id,
+                CreditWallet.feature_key == seed_mayva.WA_FEATURE_KEY,
+            ))
+            if w is not None:
+                from app.models.credit import CreditLedger
+                for e in (await db.scalars(select(CreditLedger).where(CreditLedger.wallet_id == w.id))).all():
+                    await db.delete(e)
+                await db.delete(w)
+    expected = next(p for p in seed_mayva.PLANS if p["code"] == "practice")["wa_messages"]
+    for _ in range(2):
+        async with session_scope() as db:
+            await seed_mayva._backfill_wa_wallets(db, product_id=product.id)
+    async with session_scope() as db:
+        with bypass_product(), bypass_tenant():
+            w = await db.scalar(select(CreditWallet).where(
+                CreditWallet.tenant_id == tenant.id,
+                CreditWallet.feature_key == seed_mayva.WA_FEATURE_KEY,
+            ))
+            assert w is not None and w.balance == expected

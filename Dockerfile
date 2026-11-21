@@ -22,7 +22,7 @@ RUN pip install --upgrade pip hatchling \
     "redis>=5.2" "arq>=0.26" "argon2-cffi>=23.1" "pyjwt[crypto]>=2.10" \
     "httpx>=0.28" "structlog>=24.4" "python-multipart>=0.0.20" \
     "email-validator>=2.2" "orjson>=3.10" "tenacity>=9.0" "stripe>=11.4" \
-    "pyotp>=2.9"
+    "pyotp>=2.9" "boto3>=1.34"
 
 # ---------- runtime ----------
 FROM python:3.12-slim AS runtime

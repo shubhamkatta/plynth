@@ -420,6 +420,30 @@ async def request_password_reset(
     return raw_token, expires_at
 
 
+async def send_password_reset_email(
+    db: AsyncSession, *, product_id: UUID, email: str, raw_token: str
+) -> None:
+    """Email the reset link `<product settings.app_url>/reset?token=…`. Without
+    an `app_url` there is no page to link to, so we log and skip rather than
+    send a dead link."""
+    from app.models.product import Product
+    from app.providers import notifications
+
+    with bypass_product(), bypass_tenant():
+        product = await db.get(Product, product_id)
+    app_url = ((product.settings if product else None) or {}).get("app_url")
+    if not app_url:
+        log.warning("password_reset.no_app_url", product_id=str(product_id))
+        return
+    await notifications.send_email(
+        to=email.lower(), template="password_reset",
+        context={
+            "link": f"{str(app_url).rstrip('/')}/reset?token={raw_token}",
+            "expires_minutes": 60,
+        },
+    )
+
+
 async def confirm_password_reset(
     db: AsyncSession, *, token: str, new_password: str
 ) -> User:

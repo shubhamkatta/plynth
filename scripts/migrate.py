@@ -339,6 +339,33 @@ MIGRATIONS: list[tuple[str, str]] = [
         ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled_at TIMESTAMPTZ NULL
         """,
     ),
+    # Invite tokens (join_tenant / new_tenant). SHA-256 of token only.
+    (
+        "0013_invite_tokens",
+        """
+        CREATE TABLE IF NOT EXISTS invite_tokens (
+          id          UUID PRIMARY KEY,
+          product_id  UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          tenant_id   UUID REFERENCES tenants(id) ON DELETE CASCADE,
+          kind        VARCHAR(16)  NOT NULL,
+          email       VARCHAR(255) NOT NULL,
+          full_name   VARCHAR(255),
+          role_codes  JSONB        NOT NULL DEFAULT '[]'::jsonb,
+          plan_code   VARCHAR(64),
+          token_hash  VARCHAR(64)  NOT NULL,
+          expires_at  TIMESTAMPTZ  NOT NULL,
+          accepted_at TIMESTAMPTZ,
+          revoked_at  TIMESTAMPTZ,
+          invited_by  UUID REFERENCES users(id) ON DELETE SET NULL,
+          created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_invite_tokens_token_hash
+          ON invite_tokens (token_hash);
+        CREATE INDEX IF NOT EXISTS ix_invite_tokens_email ON invite_tokens (email);
+        CREATE INDEX IF NOT EXISTS ix_invite_tokens_product_id ON invite_tokens (product_id)
+        """,
+    ),
 ]
 
 

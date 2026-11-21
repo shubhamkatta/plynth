@@ -21,8 +21,10 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     TokenPair,
 )
+from app.schemas.invite import InviteAccept, InvitePreview, InviteTokenRequest
 from app.services import auth as auth_svc
 from app.services import component as component_svc
+from app.services import invite as invite_svc
 from app.services import mfa as mfa_svc
 from app.services.rbac import list_user_permission_codes
 
@@ -119,6 +121,34 @@ async def login(
     return TokenPair(access_token=access, refresh_token=refresh, expires_at=exp)
 
 
+@router.post("/invites/preview", response_model=InvitePreview)
+async def preview_invite(
+    payload: InviteTokenRequest, db: Annotated[AsyncSession, Depends(get_db)]
+) -> InvitePreview:
+    """Public. Lets the accept page show who/what the invite is for. POST (not
+    GET) so the token never lands in URLs/access logs."""
+    invite, product_name = await invite_svc.preview(db, raw=payload.token)
+    return InvitePreview(
+        email=invite.email, full_name=invite.full_name, kind=invite.kind,
+        plan_code=invite.plan_code, product_name=product_name,
+        expires_at=invite.expires_at,
+    )
+
+
+@router.post("/invites/accept", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
+async def accept_invite(
+    payload: InviteAccept, request: Request, db: Annotated[AsyncSession, Depends(get_db)]
+) -> TokenPair:
+    """Public. Consumes a single-use invite, creates the account with the
+    chosen password, and signs the user in."""
+    access, refresh, exp = await invite_svc.accept(
+        db, raw=payload.token, password=payload.password, full_name=payload.full_name,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+    )
+    return TokenPair(access_token=access, refresh_token=refresh, expires_at=exp)
+
+
 @router.post("/refresh", response_model=TokenPair)
 async def refresh_tokens(
     payload: RefreshRequest, db: Annotated[AsyncSession, Depends(get_db)]
@@ -167,6 +197,10 @@ async def forgot_password(
         db, product_id=product_id, email=payload.email,
         ip_address=request.client.host if request.client else None,
     )
+    if raw is not None:
+        await auth_svc.send_password_reset_email(
+            db, product_id=product_id, email=payload.email, raw_token=raw
+        )
     if raw is not None and not settings.is_production:
         return ForgotPasswordResponse(reset_token=raw, expires_at=expires)
     return ForgotPasswordResponse()

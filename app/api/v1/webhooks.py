@@ -39,11 +39,22 @@ log = structlog.get_logger("webhook")
 # `activated` = subscription live, `charged` = a cycle was successfully billed.
 # `subscription.authenticated` (mandate authorized, fires DURING the trial before
 # any money moves) is deliberately excluded: on a card-on-file trial it would
-# flip the status label TRIAL → ACTIVE before the first charge. Access is granted
-# under TRIAL anyway, so the label stays honest until the first real charge.
+# flip the status label TRIAL → ACTIVE before the first charge. It is recorded
+# as `meta.mandate_authorized_at` instead (see _SUBSCRIPTION_LIFECYCLE_HANDLERS).
 _SUBSCRIPTION_ACTIVE_EVENTS = frozenset(
     {"subscription.activated", "subscription.charged"}
 )
+
+
+# Razorpay lifecycle events beyond activation. `payment.failed` is deliberately
+# NOT mapped: it carries no subscription id, and `subscription.pending` /
+# `.halted` already express the retry / exhausted states.
+_SUBSCRIPTION_LIFECYCLE_HANDLERS = {
+    "subscription.authenticated": billing_svc.handle_mandate_authorized,
+    "subscription.pending": billing_svc.handle_subscription_pending,
+    "subscription.halted": billing_svc.handle_subscription_halted,
+    "subscription.cancelled": billing_svc.handle_subscription_cancelled,
+}
 
 
 def _extract_provider_subscription_id(data: dict[str, Any]) -> str | None:
@@ -65,16 +76,22 @@ async def billing_webhook(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     stripe_signature: Annotated[str | None, Header(alias="Stripe-Signature")] = None,
+    razorpay_signature: Annotated[str | None, Header(alias="X-Razorpay-Signature")] = None,
 ) -> JSONResponse:
     body = await request.body()
     provider = get_billing_provider()
+    # Stripe signs with `Stripe-Signature`, Razorpay with `X-Razorpay-Signature`.
+    # Reading only the Stripe header made EVERY Razorpay webhook fail
+    # verification (400), so subscriptions never left TRIAL. The provider's
+    # `parse_webhook` still does the actual HMAC check.
+    signature = stripe_signature or razorpay_signature
 
     try:
-        event = await provider.parse_webhook(payload=body, signature=stripe_signature or "")
+        event = await provider.parse_webhook(payload=body, signature=signature or "")
     except Exception as exc:
         log.warning(
             "webhook.signature_invalid", provider=provider.name,
-            error=str(exc), has_signature=bool(stripe_signature),
+            error=str(exc), has_signature=bool(signature),
         )
         return JSONResponse(
             {"code": "invalid_signature", "message": "Webhook signature invalid", "details": {}},
@@ -164,6 +181,26 @@ async def billing_webhook(
             await billing_svc.handle_subscription_activated(db, subscription_id=sub.id)
             await audit.record(
                 db, action="webhook.subscription_activated",
+                resource_type="subscription", resource_id=sub.id,
+                tenant_id=sub.tenant_id, product_id=sub.product_id,
+                diff={"event_id": event.id, "type": event.type, "provider": provider.name},
+            )
+
+        elif event.type in _SUBSCRIPTION_LIFECYCLE_HANDLERS:
+            provider_sub_id = _extract_provider_subscription_id(event.data)
+            sub = await db.scalar(
+                select(Subscription).where(
+                    Subscription.provider_subscription_id == provider_sub_id
+                )
+            )
+            if sub is None:
+                log.warning("webhook.subscription_missing", event_id=event.id,
+                            provider_sub=provider_sub_id)
+                return JSONResponse({"received": "true"}, status_code=200)
+            set_current_product(sub.product_id)
+            await _SUBSCRIPTION_LIFECYCLE_HANDLERS[event.type](db, subscription_id=sub.id)
+            await audit.record(
+                db, action=f"webhook.{event.type.replace('.', '_')}",
                 resource_type="subscription", resource_id=sub.id,
                 tenant_id=sub.tenant_id, product_id=sub.product_id,
                 diff={"event_id": event.id, "type": event.type, "provider": provider.name},

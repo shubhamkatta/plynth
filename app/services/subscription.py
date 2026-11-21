@@ -426,6 +426,40 @@ async def suspend_if_grace_expired(db: AsyncSession) -> int:
     return len(candidates)
 
 
+async def expire_lapsed_trials(db: AsyncSession) -> int:
+    """Cross-product sweep: end TRIALs that never converted.
+
+    A TRIAL whose `trial_end` is more than `trial_expiry_buffer_days` in the
+    past never received a `subscription.charged`/`activated` webhook — i.e. no
+    mandate was authorized, or the first charge didn't happen. Without this the
+    status stays TRIAL (which `has_access`) forever. Moves them to EXPIRED
+    (access cut). Reversible: a late `subscription.charged` webhook flips an
+    EXPIRED subscription back to ACTIVE via `handle_subscription_activated`.
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=settings.trial_expiry_buffer_days)
+    with bypass_product(), bypass_tenant():
+        candidates = (
+            await db.scalars(
+                select(Subscription).where(
+                    Subscription.status == SubscriptionStatus.TRIAL,
+                    Subscription.trial_end.is_not(None),
+                    Subscription.trial_end <= cutoff,
+                )
+            )
+        ).all()
+        for sub in candidates:
+            sub.status = SubscriptionStatus.EXPIRED
+            await audit.record(
+                db, action="subscription.trial_expired", resource_type="subscription",
+                resource_id=sub.id, tenant_id=sub.tenant_id, product_id=sub.product_id,
+                diff={
+                    "trial_end": sub.trial_end.isoformat() if sub.trial_end else None,
+                    "has_provider_subscription": sub.provider_subscription_id is not None,
+                },
+            )
+    return len(candidates)
+
+
 async def _get_or_raise(db: AsyncSession, tenant_id: UUID) -> Subscription:
     with bypass_product(), bypass_tenant():
         sub = await db.scalar(

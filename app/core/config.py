@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # Tenancy / billing lifecycle
     default_trial_days: int = 14
     grace_period_days: int = 7
+    # Days past `trial_end` a TRIAL subscription may linger before the sweep
+    # marks it EXPIRED. Absorbs the delay between Razorpay's first charge at
+    # `start_at` and its `subscription.charged` webhook reaching us.
+    trial_expiry_buffer_days: int = 1
 
     # Rate limit
     rate_limit_per_minute: int = 120

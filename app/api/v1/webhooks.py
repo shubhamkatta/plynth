@@ -65,16 +65,22 @@ async def billing_webhook(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     stripe_signature: Annotated[str | None, Header(alias="Stripe-Signature")] = None,
+    razorpay_signature: Annotated[str | None, Header(alias="X-Razorpay-Signature")] = None,
 ) -> JSONResponse:
     body = await request.body()
     provider = get_billing_provider()
+    # Stripe signs with `Stripe-Signature`, Razorpay with `X-Razorpay-Signature`.
+    # Reading only the Stripe header made EVERY Razorpay webhook fail
+    # verification (400), so subscriptions never left TRIAL. The provider's
+    # `parse_webhook` still does the actual HMAC check.
+    signature = stripe_signature or razorpay_signature
 
     try:
-        event = await provider.parse_webhook(payload=body, signature=stripe_signature or "")
+        event = await provider.parse_webhook(payload=body, signature=signature or "")
     except Exception as exc:
         log.warning(
             "webhook.signature_invalid", provider=provider.name,
-            error=str(exc), has_signature=bool(stripe_signature),
+            error=str(exc), has_signature=bool(signature),
         )
         return JSONResponse(
             {"code": "invalid_signature", "message": "Webhook signature invalid", "details": {}},

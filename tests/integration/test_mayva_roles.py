@@ -195,3 +195,41 @@ async def test_admin_and_owner_can_manage_staff() -> None:
     # assistant / patient must not
     assert "staff:manage" not in await _role_perm_codes(product.id, "assistant")
     assert "staff:manage" not in await _role_perm_codes(product.id, "patient")
+
+
+CLINIC_ADMIN = {
+    "settings:manage", "staff:manage", "subscriptions:read", "subscriptions:change",
+    "payment:read", "payment:manage", "availability:read", "availability:manage",
+    "client:read", "client:create", "client:update", "dashboard:read",
+    "analytics:read", "digest:read", "alert:read",
+}
+
+
+@pytest.mark.asyncio
+async def test_clinic_admin_role_has_exactly_the_agreed_permissions() -> None:
+    product = await _seed_mayva_roles()
+    assert await _role_perm_codes(product.id, "clinic_admin") == CLINIC_ADMIN
+
+
+@pytest.mark.asyncio
+async def test_clinic_admin_cannot_touch_special_category_data() -> None:
+    """An office manager must not read session notes or message bodies, speak as
+    the therapist, approve AI drafts, or export/erase personal data."""
+    product = await _seed_mayva_roles()
+    codes = await _role_perm_codes(product.id, "clinic_admin")
+    forbidden = {"note:read", "note:create", "note:sign", "message:read", "inbox:send",
+                 "inbox:read", "approval:decide", "gdpr:export", "gdpr:erase",
+                 "session:read", "session:update", "session:create", "*:*"}
+    assert codes & forbidden == set()
+    assert not any(c.startswith("note:") or c.startswith("gdpr:") for c in codes)
+
+
+@pytest.mark.asyncio
+async def test_clinic_admin_seed_is_idempotent_and_distinct_from_admin() -> None:
+    product = await _seed_mayva_roles()
+    async with session_scope() as db:
+        await rbac.ensure_system_roles_for_product(db, product_id=product.id)
+    assert await _role_perm_codes(product.id, "clinic_admin") == CLINIC_ADMIN
+    # plynth's own `admin` is unchanged by this role (no settings/clinical access).
+    admin = await _role_perm_codes(product.id, "admin")
+    assert "settings:manage" not in admin and "client:read" not in admin

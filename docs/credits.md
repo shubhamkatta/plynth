@@ -61,6 +61,20 @@ their fresh balance immediately.
 
 Use `limit_value` for capacity, `credit_amount` for metered actions.
 
+## Monthly allowance + refill
+
+Plan credits are a **monthly allowance**, whatever the billing cadence. They are
+granted at trial start / purchase / plan change, and then **refilled by
+`task_refill_credits`** (hourly sweep, `credit.refill_due_wallets`): when a
+wallet's 30-day period ends, leftover credits **expire** and the plan's current
+`PlanFeature.credit_amount` is granted again. A yearly plan is charged once a year
+but still refills every month. Unused credits do not roll over.
+
+- Idempotent per period (`reference = refill:<wallet>:<period-end-date>`).
+- Only subscriptions with access refill; a `TRIAL` past `trial_end` does not.
+- A wallet with no `period_end` is treated as starting at its `created_at`.
+- After worker downtime a wallet gets **one** refill, not one per missed month.
+
 ## Mayva feature keys (`mayva-practice`)
 
 `scripts/seed_mayva.py` grants two metered wallets per plan via `PlanFeature`:
@@ -68,7 +82,7 @@ Use `limit_value` for capacity, `credit_amount` for metered actions.
 | `feature_key` | Meters | Tiers |
 | --- | --- | --- |
 | `ai_messages` | outbound AI messages | per plan; none on Essentials / unmetered on Clinic + Beta |
-| `wa_messages` | outbound WhatsApp sends from the inbox | per plan (placeholder quotas — confirm); none on Clinic + Beta |
+| `wa_messages` | outbound WhatsApp sends from the inbox | per plan, monthly: Essentials 500 · Practice 1000 · Concierge 3000 (yearly = same monthly amount); none on Clinic + Beta |
 
 `credit.consume` raises `NotFound` when the wallet doesn't exist, so a tenant
 without `wa_messages` cannot be metered. Plan credits only grant on trial

@@ -1,0 +1,171 @@
+name: Deploy (AWS)
+
+# Build the image for arm64 → push to ECR (immutable git-SHA tag) → deploy to the
+# plynth EC2 box through SSM Run Command. Credential-less: GitHub OIDC assumes the
+# role from infra/aws (main branch only). No SSH, no stored AWS keys.
+#
+# Does nothing until the repo variable AWS_DEPLOY_ROLE_ARN is set (from
+# `tofu output github_deploy_role_arn`), so merging this ahead of the
+# infrastructure is safe.
+#
+# Rollback / redeploy: Run workflow → give an existing `image_tag` (git SHA). If
+# that tag is already in ECR it is NOT rebuilt, just deployed.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Existing/target git SHA to deploy (default: this ref's SHA)"
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPO: plynth
+  # Hostnames Caddy serves (comma or space separated) (see Caddyfile.aws). During the
+  # rehearsal keep this to the rehearsal host; add the real one at cutover.
+  API_HOSTNAMES: ${{ vars.API_HOSTNAMES }}
+
+jobs:
+  deploy:
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04-arm        # native arm64 (free on public repos) — no QEMU
+    steps:
+      - name: Resolve the SHA to deploy
+        id: sha
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then SHA="${{ inputs.image_tag }}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then SHA="${{ github.event.workflow_run.head_sha }}"
+          else SHA="${{ github.sha }}"; fi
+          # Never let a free-text dispatch input reach a shell/tag unchecked.
+          printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "not a git SHA: $SHA"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Deploying $SHA"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+
+      - name: Require API_HOSTNAMES
+        run: |
+          [ -n "$API_HOSTNAMES" ] || { echo "Set repo variable API_HOSTNAMES (e.g. api2.example.com)"; exit 1; }
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Does the image already exist?
+        id: exists
+        run: |
+          if aws ecr describe-images --repository-name "$ECR_REPO" \
+               --image-ids imageTag="${{ steps.sha.outputs.sha }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.exists == 'false'
+
+      - name: Build and push (arm64)
+        if: steps.exists.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ steps.sha.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Find the app instance
+        id: ec2
+        run: |
+          IID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=plynth-app" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          if [ -z "$IID" ] || [ "$IID" = "None" ]; then echo "no running plynth-app instance"; exit 1; fi
+          echo "id=$IID" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy via SSM
+        run: |
+          set -euo pipefail
+          IID="${{ steps.ec2.outputs.id }}"
+          IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPO}:${{ steps.sha.outputs.sha }}"
+          COMPOSE_B64=$(base64 -w0 docker-compose.aws.yml)
+          CADDY_B64=$(base64 -w0 Caddyfile.aws)
+          # Caddy wants space-separated site addresses; accept commas in the var.
+          HOSTS=$(printf '%s' "$API_HOSTNAMES" | tr ',' ' ')
+
+          # Runs under /bin/sh (dash) on the box: no pipefail, no bashisms.
+          # Order matters: write files → pull → MIGRATE with the new image while
+          # the old containers still serve → switch → health-check → roll back
+          # to the previous image if unhealthy. A failed migration aborts before
+          # anything is replaced.
+          SCRIPT=$(cat <<EOS
+          set -eu
+          cd /opt/plynth
+          test -f .env || { echo "/opt/plynth/.env is missing — create it first (infra/aws/README.md)"; exit 1; }
+          echo '${COMPOSE_B64}' | base64 -d > docker-compose.aws.yml
+          echo '${CADDY_B64}' | base64 -d > Caddyfile
+          [ -f .deploy.env ] && cp .deploy.env .deploy.env.prev || true
+          printf 'PLYNTH_IMAGE=%s\nAPI_HOSTNAMES="%s"\n' '${IMAGE}' '${HOSTS}' > .deploy.env
+          DC="docker compose -f docker-compose.aws.yml --env-file .deploy.env"
+          aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${{ steps.ecr.outputs.registry }}
+          \$DC pull api worker
+          \$DC up -d redis
+          \$DC run --rm --no-deps api python -m scripts.migrate
+          \$DC up -d --remove-orphans
+          ok=0
+          for i in \$(seq 1 30); do
+            if \$DC exec -T api curl -fsS http://localhost:8000/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 4
+          done
+          if [ "\$ok" != 1 ]; then
+            echo "api unhealthy after deploy — rolling back"
+            if [ -f .deploy.env.prev ]; then cp .deploy.env.prev .deploy.env; \$DC up -d --remove-orphans; fi
+            exit 1
+          fi
+          docker image prune -f >/dev/null 2>&1 || true
+          echo "deployed ${IMAGE}"
+          EOS
+          )
+
+          PARAMS=$(jq -n --arg s "$SCRIPT" '{commands: [$s]}')
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$IID" --document-name "AWS-RunShellScript" \
+            --comment "plynth deploy ${GITHUB_SHA::7}" --parameters "$PARAMS" \
+            --query "Command.CommandId" --output text)
+          echo "SSM command: $CMD_ID"
+
+          DEADLINE=$(( SECONDS + 1500 ))
+          while :; do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$IID" --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break ;; esac
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then echo "Gave up waiting; command may still be running: $CMD_ID"; break; fi
+            echo "... $STATUS"; sleep 10
+          done
+          echo "--- stdout ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$IID" --query StandardOutputContent --output text || true
+          echo "--- stderr ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$IID" --query StandardErrorContent --output text || true
+          echo "Status: $STATUS"
+          [ "$STATUS" = "Success" ]

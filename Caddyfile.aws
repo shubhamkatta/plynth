@@ -1,0 +1,25 @@
+# Caddy for plynth on AWS. Automatic Let's Encrypt TLS (no Cloudflare proxy, no
+# origin cert). Deployed by the workflow as /opt/plynth/Caddyfile.
+#
+# API_HOSTNAMES is a SPACE-separated list from .deploy.env (the workflow converts
+# commas; Caddy rejects "a,b" without a space), e.g.
+#   rehearsal:  api2.example.com
+#   cutover:    api.example.com api2.example.com
+# A hostname only gets a cert once its DNS A record points at this box.
+{$API_HOSTNAMES} {
+    reverse_proxy api:8000
+
+    encode gzip zstd
+
+    log {
+        output stdout
+        format json
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+}

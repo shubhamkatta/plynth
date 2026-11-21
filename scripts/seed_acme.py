@@ -115,8 +115,9 @@ PLANS: list[dict] = [
         "is_public": True,
         # No AI on Essentials — 0 documents the intent (no wallet is created).
         "ai_messages": Decimal("0"),
-        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
-        "wa_messages": Decimal("200"),
+        # Monthly allowance (refilled by the credit refill sweep, also on yearly plans).
+        # Essentials 500 per Acme sizing (~3 credits/session, 60-100 sessions/mo).
+        "wa_messages": Decimal("500"),
         "provider_refs": {"razorpay": "plan_TNZwgF5fQwPTPO"},  # live monthly
     },
     {
@@ -128,8 +129,9 @@ PLANS: list[dict] = [
         "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("0"),
-        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
-        "wa_messages": Decimal("200"),
+        # Monthly allowance (refilled by the credit refill sweep, also on yearly plans).
+        # Essentials 500 per Acme sizing (~3 credits/session, 60-100 sessions/mo).
+        "wa_messages": Decimal("500"),
         "provider_refs": {"razorpay": "plan_TNZwhTa4K96xZF"},  # live annual
     },
     {
@@ -141,7 +143,8 @@ PLANS: list[dict] = [
         "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("500"),
-        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        # Monthly allowance (refilled by the credit refill sweep, also on yearly plans).
+        # Essentials 500 per Acme sizing (~3 credits/session, 60-100 sessions/mo).
         "wa_messages": Decimal("1000"),
         "provider_refs": {"razorpay": "plan_TNZwgi92BT1iCQ"},  # live monthly
     },
@@ -154,7 +157,8 @@ PLANS: list[dict] = [
         "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("500"),
-        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        # Monthly allowance (refilled by the credit refill sweep, also on yearly plans).
+        # Essentials 500 per Acme sizing (~3 credits/session, 60-100 sessions/mo).
         "wa_messages": Decimal("1000"),
         "provider_refs": {"razorpay": "plan_TNZwhu3TVqwUBX"},  # live annual
     },
@@ -167,7 +171,8 @@ PLANS: list[dict] = [
         "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("2000"),
-        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        # Monthly allowance (refilled by the credit refill sweep, also on yearly plans).
+        # Essentials 500 per Acme sizing (~3 credits/session, 60-100 sessions/mo).
         "wa_messages": Decimal("3000"),
         "provider_refs": {"razorpay": "plan_TNZwh4slGhczxl"},  # live monthly
     },
@@ -180,7 +185,8 @@ PLANS: list[dict] = [
         "trial_days": 30,
         "is_public": True,
         "ai_messages": Decimal("2000"),
-        # TODO(confirm): placeholder quota — set to the real WhatsApp allowance.
+        # Monthly allowance (refilled by the credit refill sweep, also on yearly plans).
+        # Essentials 500 per Acme sizing (~3 credits/session, 60-100 sessions/mo).
         "wa_messages": Decimal("3000"),
         "provider_refs": {"razorpay": "plan_TNZwiM5Lygue7N"},  # live annual
     },

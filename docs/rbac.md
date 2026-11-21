@@ -22,8 +22,27 @@ wildcards in DB queries — keep it in Python.
 | Role   | Permissions                                                                                                  |
 | ------ | ------------------------------------------------------------------------------------------------------------ |
 | owner  | `*:*`                                                                                                        |
-| admin  | tenant, user, role mgmt; subscription read/purchase/change/cancel; credit read/grant; audit read              |
+| admin  | tenant, user, role mgmt; subscription read/purchase/change/cancel; credit read/grant; audit read; `staff:manage` |
 | member | tenant/user/subscription read; credit read + consume                                                          |
+
+### Mayva (`mayva-practice`) roles
+
+Extra per-product roles in `PRODUCT_SYSTEM_ROLES["mayva-practice"]`: `practitioner`,
+`assistant`, `patient`. Mayva's backend gates on 28 permission codes; **every one
+must exist in the global catalog** (a test enforces this), otherwise non-owner
+users get 403s. Newer codes: `dashboard:read`, `analytics:read`, `alert:read`,
+`message:read`, `staff:manage`.
+
+| Role | Notable grants |
+| ---- | -------------- |
+| `owner` | `*:*` (includes `settings:manage`, `staff:manage`) |
+| `admin` | `staff:manage` (plus the tenant/user/billing set above) |
+| `practitioner` | clinical set, `inbox:read/send`, `dashboard:read`, `analytics:read`, `alert:read`, `message:read`, `subscriptions:read` — **not** `staff:manage`, `settings:manage` or `subscriptions:change` |
+| `assistant` | `client:read`, booking, `inbox:read` |
+| `patient` | `portal:read`, `booking:create` only |
+
+Role grants are **additive on re-seed** (`ensure_system_roles_for_product`): new
+codes reach existing roles when `scripts.seed_mayva` runs; nothing is revoked.
 
 Custom tenant-scoped roles can be created via `POST /roles` with any subset of
 existing permissions.

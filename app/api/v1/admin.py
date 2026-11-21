@@ -6,7 +6,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import require_platform_admin
 from app.core.exceptions import NotFound, ValidationFailed
@@ -76,11 +75,13 @@ async def invite_prospect(
         db, product_id=product.id, kind=INVITE_KIND_NEW_TENANT, tenant_id=None,
         email=payload.email, full_name=payload.full_name, role_codes=[],
         plan_code=payload.plan_code, actor_user_id=None,
-        inviter_label=product.name,
+        inviter_label=product.name, send_email=payload.send_email,
     )
+    # Always return the link here (platform admin only): it is how a prospect
+    # invite is delivered by hand when email is unavailable (SES sandbox).
     return InviteResponse(
-        id=invite.id, email=invite.email, kind=invite.kind, expires_at=invite.expires_at,
-        link=None if settings.is_production else link,
+        id=invite.id, email=invite.email, kind=invite.kind,
+        expires_at=invite.expires_at, link=link,
     )
 
 

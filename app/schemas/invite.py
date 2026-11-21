@@ -23,6 +23,9 @@ class ProspectInviteCreate(BaseModel):
     email: EmailStr
     full_name: str | None = Field(default=None, max_length=255)
     plan_code: str | None = Field(default=None, max_length=64)
+    # False = create the invite and return the link WITHOUT emailing it, so the
+    # admin can send it from their own mailbox (e.g. while SES is in sandbox).
+    send_email: bool = True
 
 
 class InviteResponse(BaseModel):
@@ -30,8 +33,10 @@ class InviteResponse(BaseModel):
     email: str
     kind: str
     expires_at: datetime
-    # The accept link. Returned ONLY outside production (the email is the
-    # delivery channel in production) so dev/staging/tests work without SES.
+    # The accept link. Tenant-admin invites return it ONLY outside production
+    # (the email is the proof the invitee controls the address). Platform-admin
+    # prospect invites ALWAYS return it: the caller already holds the platform
+    # admin token and is the one handing the link to the prospect.
     link: str | None = None
 
 

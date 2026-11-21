@@ -154,3 +154,44 @@ async def test_patient_role_seed_is_idempotent() -> None:
             )
     # Two RolePermission rows exactly — no duplicates from the second run.
     assert len(role.permissions) == 2
+
+
+@pytest.mark.asyncio
+async def test_mayva_permission_catalog_covers_every_code_the_backend_requires() -> None:
+    """The 28 codes Mayva's backend gates on (swept from its require_permission
+    calls) must all exist in the global catalog, or non-owner users 403 on them."""
+    mayva_codes = {
+        "settings:manage", "client:read", "session:read", "client:update",
+        "availability:manage", "subscriptions:read", "staff:manage", "session:update",
+        "payment:manage", "payment:read", "note:read", "note:create", "client:create",
+        "availability:read", "approval:decide", "alert:read", "subscriptions:change",
+        "session:create", "portal:read", "note:sign", "inbox:send", "analytics:read",
+        "message:read", "inbox:read", "gdpr:export", "gdpr:erase", "digest:read",
+        "dashboard:read",
+    }
+    assert len(mayva_codes) == 28
+    catalog = {c for c, _ in rbac.SYSTEM_PERMISSIONS}
+    assert mayva_codes - catalog == set()
+
+
+@pytest.mark.asyncio
+async def test_practitioner_gets_dashboard_and_analytics_but_not_staff_manage() -> None:
+    product = await _seed_mayva_roles()
+    prac = await _role_perm_codes(product.id, "practitioner")
+    assert {"dashboard:read", "analytics:read", "alert:read", "message:read",
+            "subscriptions:read"} <= prac
+    # Managing colleagues is an owner/admin function.
+    assert "staff:manage" not in prac
+    # ...and the practitioner still cannot manage practice settings or billing.
+    assert "settings:manage" not in prac and "subscriptions:change" not in prac
+
+
+@pytest.mark.asyncio
+async def test_admin_and_owner_can_manage_staff() -> None:
+    product = await _seed_mayva_roles()
+    assert "staff:manage" in await _role_perm_codes(product.id, "admin")
+    # owner holds *:* which matches any code
+    assert any(rbac._matches(g, "staff:manage") for g in rbac.SYSTEM_ROLES["owner"])
+    # assistant / patient must not
+    assert "staff:manage" not in await _role_perm_codes(product.id, "assistant")
+    assert "staff:manage" not in await _role_perm_codes(product.id, "patient")

@@ -55,9 +55,10 @@ async def create_invite(
     plan_code: str | None,
     actor_user_id: UUID | None,
     inviter_label: str,
+    send_email: bool = True,
 ) -> tuple[InviteToken, str]:
     """Create the invite, revoke older pending ones for the same email, email
-    the link. Returns (invite, link)."""
+    the link (unless `send_email` is False). Returns (invite, link)."""
     email = email.lower()
     if kind == INVITE_KIND_JOIN_TENANT and tenant_id is None:
         raise ValidationFailed("join_tenant invites need a tenant")
@@ -119,18 +120,20 @@ async def create_invite(
             db, action="invite.create", actor_user_id=actor_user_id,
             resource_type="invite", resource_id=invite.id,
             tenant_id=tenant_id, product_id=product_id,
-            diff={"email": email, "kind": kind, "roles": role_codes, "plan_code": plan_code},
+            diff={"email": email, "kind": kind, "roles": role_codes,
+                  "plan_code": plan_code, "emailed": send_email},
         )
         product_name = product.name
 
-    await notifications.send_email(
-        to=email, template="invite",
-        context={
-            "name": full_name or email, "inviter": inviter_label,
-            "product_name": product_name, "link": link,
-            "expires_days": settings.invite_ttl_days,
-        },
-    )
+    if send_email:
+        await notifications.send_email(
+            to=email, template="invite",
+            context={
+                "name": full_name or email, "inviter": inviter_label,
+                "product_name": product_name, "link": link,
+                "expires_days": settings.invite_ttl_days,
+            },
+        )
     return invite, link
 
 

@@ -242,7 +242,7 @@ Anchored to UI actions, not REST verbs. Full request bodies in
 | Change password | `POST /api/v1/auth/password` |
 | Forgot password | `POST /api/v1/auth/password/forgot` `{email}` — always returns 200 (no enumeration). Non-prod responses include the raw `reset_token` for testing. Prod returns just `{ok: true}` and emails `<product settings.app_url>/reset?token=…` (needs `EMAIL_PROVIDER=ses`; skipped with a warning if the product has no `app_url`). |
 | Invite a teammate | `POST /api/v1/users/invites` `{email, full_name?, role_codes?}` (`users:write`) — emails a single-use link to `<app_url>/accept-invite?token=…` (or the hosted `/invite` page). |
-| Invite a prospect | `POST /api/v1/admin/products/{slug}/invites` (platform-admin) — invitee gets their own new tenant. |
+| Invite a prospect | `POST /api/v1/admin/products/{slug}/invites` (platform-admin) `{email, full_name?, plan_code?, send_email?}` — invitee gets their own new tenant. The response **always includes `link`**; pass `send_email: false` to skip the email and deliver the link yourself. |
 | Accept an invite | `POST /api/v1/auth/invites/preview` `{token}` then `POST /api/v1/auth/invites/accept` `{token, password, full_name?}` → TokenPair. Unknown/expired/used tokens all return the same 404. |
 | Configure refresh-token TTL (admin) | `PATCH /api/v1/admin/products/{slug}` `{settings: {auth: {refresh_ttl_days: <1..365>}}}` — overrides the platform default for this product only. Honored by /login, /refresh, /register, /auth/google. Out-of-range values fall back to platform default. |
 | Reset password (consume token) | `POST /api/v1/auth/password/reset` `{token, new_password}` — single-use, expires in 1 hour. Revokes every existing refresh token. |

@@ -7,10 +7,18 @@ terraform {
     }
   }
 
-  # STATE: local for the first run. State here holds no DB password (the DB
-  # role is created by hand on the box, see README) but does hold resource ids,
-  # so move it to an encrypted S3 backend before a second person touches this:
-  #   backend "s3" { bucket = "...", key = "plynth/terraform.tfstate", region = "ap-south-1", encrypt = true }
+  # STATE: encrypted, versioned S3 — not a laptop. This state holds no DB
+  # password (the DB role is created by hand on the box, see README) but does
+  # hold every resource id, and losing it means losing the ability to plan this
+  # stack safely. Shares the bucket with the mayva-desk stack under a separate
+  # key. `use_lockfile` is S3-native locking (OpenTofu >= 1.10), no DynamoDB.
+  backend "s3" {
+    bucket       = "mayva-tfstate"
+    key          = "plynth/terraform.tfstate"
+    region       = "ap-south-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {

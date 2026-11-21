@@ -307,6 +307,8 @@ async def refill_due_wallets(db: AsyncSession, *, now: datetime | None = None) -
                 and subscription.trial_end <= now
             ):
                 continue
+            if amount is None or amount <= 0:   # query filters this; keeps types honest
+                continue
             if await _refill_wallet(
                 db, wallet_id=wallet_id, amount=Decimal(amount), now=now
             ):

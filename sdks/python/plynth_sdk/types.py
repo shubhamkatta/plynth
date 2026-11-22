@@ -145,6 +145,71 @@ class InviteUserRequest(TypedDict, total=False):
     role_codes: list[str]
 
 
+class InviteCreateRequest(TypedDict, total=False):
+    """POST /users/invites — a teammate joins the CALLER's tenant."""
+
+    email: str
+    full_name: str | None
+    role_codes: list[str]
+    plan_code: str | None
+
+
+class ProspectInviteCreateRequest(TypedDict, total=False):
+    """POST /admin/products/{slug}/invites — the invitee gets their OWN new
+    tenant on accept. Platform-admin only.
+
+    ``send_email: False`` returns the link without emailing it, so the admin
+    can send it from their own mailbox — which is how invites go out while SES
+    is still sandboxed.
+    """
+
+    email: str
+    full_name: str | None
+    plan_code: str | None
+    send_email: bool
+
+
+class InviteTokenRequest(TypedDict):
+    """POST /auth/invites/preview — unauthenticated, token is the credential."""
+
+    token: str
+
+
+class InviteAcceptRequest(TypedDict, total=False):
+    """POST /auth/invites/accept — unauthenticated; returns a token pair."""
+
+    token: str
+    password: str
+    full_name: str | None
+
+
+class Invite(TypedDict, total=False):
+    """An invite as returned by either create endpoint.
+
+    ``link`` is present for platform-admin prospect invites (the caller already
+    holds the admin token and hands the link over themselves) but omitted for
+    tenant-admin invites in production, where the email is the proof the
+    invitee controls the address.
+    """
+
+    id: str
+    email: str
+    kind: str
+    expires_at: str
+    link: str | None
+
+
+class InvitePreview(TypedDict, total=False):
+    """What an invitee is shown before accepting — no credential required."""
+
+    email: str
+    full_name: str | None
+    kind: str
+    plan_code: str | None
+    product_name: str
+    expires_at: str
+
+
 class UpdateUserRequest(TypedDict, total=False):
     full_name: str | None
     email: str

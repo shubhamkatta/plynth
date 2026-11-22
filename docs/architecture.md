@@ -726,6 +726,15 @@ and reviewable).
 
 Both SDKs implement the same semantics:
 
+- **Invites** — all four endpoints are covered. `users.createInvite` /
+  `users.create_invite` (a teammate joins the caller's tenant, user JWT);
+  `products.createInvite` / `products.create_invite` (a *prospect* invite,
+  which creates the invitee's own new tenant on accept — platform-admin
+  token, never a user JWT, and `send_email: false` returns the link without
+  emailing it so an admin can hand it over while SES is sandboxed); and
+  `auth.previewInvite` / `auth.acceptInvite` (both **unauthenticated** — the
+  invite token in the body is the credential, since an invitee has no account
+  yet; accept returns a token pair, so there is no separate login step).
 - **Auth resolution order** identical to the manual flow above:
   per-call override → user JWT (from `TokenStore.get()`) → platform-admin
   token + product slug ("god-mode"). Admin-path requests

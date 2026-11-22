@@ -27,6 +27,11 @@ from plynth_sdk.types import (
     ForgotPasswordResponse,
     GoogleLoginRequest,
     GrantCreditsRequest,
+    Invite,
+    InviteAcceptRequest,
+    InviteCreateRequest,
+    InvitePreview,
+    InviteTokenRequest,
     InviteUserRequest,
     LoginRequest,
     LogoutRequest,
@@ -35,6 +40,7 @@ from plynth_sdk.types import (
     Permission,
     Plan,
     Product,
+    ProspectInviteCreateRequest,
     PurchaseRequest,
     RegisterIndividualRequest,
     RegisterRequest,
@@ -113,6 +119,22 @@ class AuthResource(_Base):
             RequestSpec("POST", "/api/v1/auth/password/forgot", json_body=dict(req), skip_auth=True)
         )
 
+    def preview_invite(self, req: InviteTokenRequest) -> InvitePreview:
+        """Show an invitee what they are accepting. Unauthenticated: the token
+        IS the credential, so never log it."""
+        return self._c.request(
+            RequestSpec("POST", "/api/v1/auth/invites/preview", json_body=dict(req))
+        )
+
+    def accept_invite(self, req: InviteAcceptRequest) -> Tokens:
+        """Accept an invite and receive a token pair — this both creates the
+        account and logs it in, so there is no separate login step after."""
+        return self._c.request(
+            RequestSpec(
+                "POST", "/api/v1/auth/invites/accept", json_body=dict(req), idempotent=True
+            )
+        )
+
     def reset_password(self, req: ResetPasswordRequest) -> None:
         self._c.request(
             RequestSpec("POST", "/api/v1/auth/password/reset", json_body=dict(req), skip_auth=True)
@@ -147,6 +169,17 @@ class UsersResource(_Base):
 
     def invite(self, req: InviteUserRequest) -> User:
         return self._c.request(RequestSpec("POST", "/api/v1/users", json_body=dict(req), idempotent=True))
+
+    def create_invite(self, req: InviteCreateRequest) -> Invite:
+        """Invite a teammate into the CALLER's tenant.
+
+        Distinct from ``invite()``, which posts to ``/users`` and creates the
+        user directly. This mints an invite the person accepts themselves, so
+        they choose their own password.
+        """
+        return self._c.request(
+            RequestSpec("POST", "/api/v1/users/invites", json_body=dict(req), idempotent=True)
+        )
 
     def update(self, user_id: str, req: UpdateUserRequest) -> User:
         return self._c.request(
@@ -239,6 +272,23 @@ class RolesResource(_Base):
 
 
 class ProductsResource(_Base):
+    def create_invite(self, slug: str, req: ProspectInviteCreateRequest) -> Invite:
+        """Mint a PROSPECT invite: the invitee gets their own new tenant on
+        accept. Platform-admin token, not a user JWT.
+
+        Pass ``send_email: False`` to get the link back without emailing it —
+        which is how invites are delivered while SES is still in the sandbox.
+        """
+        return self._c.request(
+            RequestSpec(
+                "POST",
+                f"/api/v1/admin/products/{slug}/invites",
+                json_body=dict(req),
+                as_platform_admin=True,
+                idempotent=True,
+            )
+        )
+
     def list(self) -> List[Product]:
         return self._c.request(RequestSpec("GET", "/api/v1/admin/products", as_platform_admin=True))
 

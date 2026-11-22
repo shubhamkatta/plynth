@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     # unless AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are set explicitly.
     email_provider: Literal["log", "ses"] = "log"
     email_from_address: str = ""
+    # SES configuration set to attach to every send. Without one, SES has
+    # nowhere to publish bounce/complaint events, so deliverability problems
+    # are invisible — which is the gap AWS asks about when refusing production
+    # access. Empty = omit the parameter entirely; naming a set that does not
+    # exist makes SES reject the send, so this stays opt-in.
+    ses_configuration_set: str = ""
     aws_region: str = "ap-south-1"
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""

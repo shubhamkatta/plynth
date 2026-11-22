@@ -24,6 +24,22 @@ class EmailDeliveryFailed(AppError):
     code = "email_delivery_failed"
 
 
+class EmailSuppressed(EmailDeliveryFailed):
+    """The recipient is on SES's suppression list — a PERMANENT refusal.
+
+    SES account-level suppression is enabled for BOUNCE and COMPLAINT, so AWS
+    maintains this list itself: a hard bounce or a spam complaint adds the
+    address automatically and later sends to it are refused. That is the
+    bounce/complaint *handling*; we do not keep a second list of our own,
+    because a duplicate would drift from the authoritative one.
+
+    It subclasses EmailDeliveryFailed so existing callers keep working, but is
+    raised separately so retry logic can tell "this will never work" from
+    "try again later". Retrying a suppressed address does not just waste a
+    call — repeatedly sending to known-bad addresses is what damages a
+    sender reputation in the first place.
+    """
+
 # template -> (subject, plain-text body). `{placeholders}` come from `context`.
 TEMPLATES: dict[str, tuple[str, str]] = {
     "invite": (
@@ -68,16 +84,40 @@ def _ses_send(*, to: str, subject: str, body: str) -> None:
         kwargs["aws_access_key_id"] = settings.aws_access_key_id
         kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
     client = boto3.client("sesv2", **kwargs)
-    client.send_email(
-        FromEmailAddress=settings.email_from_address,
-        Destination={"ToAddresses": [to]},
-        Content={
+    params: dict[str, Any] = {
+        "FromEmailAddress": settings.email_from_address,
+        "Destination": {"ToAddresses": [to]},
+        "Content": {
             "Simple": {
                 "Subject": {"Data": subject, "Charset": "UTF-8"},
                 "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
             }
         },
-    )
+    }
+    # Only when configured: naming a non-existent configuration set makes SES
+    # reject the send outright, so an unset value must mean "omit", not "".
+    if settings.ses_configuration_set:
+        params["ConfigurationSetName"] = settings.ses_configuration_set
+    client.send_email(**params)
+
+
+def _is_suppressed_recipient(exc: BaseException) -> bool:
+    """True when SES refused because the address is on the suppression list.
+
+    Matched on the botocore error code rather than the message, and without
+    importing botocore (it is only present when EMAIL_PROVIDER=ses). SES
+    reports a suppressed destination as ``MessageRejected`` with the reason in
+    the message, and ``AccountSuppressionListError`` where it has a code of
+    its own.
+    """
+    code = ""
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        code = str(response.get("Error", {}).get("Code", ""))
+    if code in {"AccountSuppressionListError", "SuppressedDestination"}:
+        return True
+    text = f"{code} {exc}".lower()
+    return "suppress" in text
 
 
 async def send_email(*, to: str, template: str, context: dict[str, Any]) -> None:
@@ -91,6 +131,13 @@ async def send_email(*, to: str, template: str, context: dict[str, Any]) -> None
     try:
         await asyncio.to_thread(_ses_send, to=to, subject=subject, body=body)
     except Exception as exc:  # boto/botocore raise many types; map to one AppError
+        if _is_suppressed_recipient(exc):
+            # Distinct log event on purpose: this is the signal that bounce /
+            # complaint handling is actually working, and it is what to show
+            # when asking AWS to re-review production access.
+            log.warning("notification.email_suppressed", template=template,
+                        error=type(exc).__name__)
+            raise EmailSuppressed("recipient is suppressed after a bounce or complaint") from exc
         log.error("notification.email_failed", to=to, template=template,
                   error=type(exc).__name__)
         raise EmailDeliveryFailed("could not send email") from exc

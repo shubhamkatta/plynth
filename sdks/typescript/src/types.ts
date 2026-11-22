@@ -140,6 +140,65 @@ export interface User {
   updated_at: string;
 }
 
+/** POST /users/invites — a teammate joins the CALLER's tenant. */
+export interface InviteCreateRequest {
+  email: string;
+  full_name?: string | null;
+  role_codes?: string[];
+  plan_code?: string | null;
+}
+
+/**
+ * POST /admin/products/{slug}/invites — the invitee gets their OWN new tenant
+ * on accept. Platform-admin only.
+ *
+ * `send_email: false` returns the link without emailing it, so the admin can
+ * send it from their own mailbox — which is how invites go out while SES is
+ * still sandboxed.
+ */
+export interface ProspectInviteCreateRequest {
+  email: string;
+  full_name?: string | null;
+  plan_code?: string | null;
+  send_email?: boolean;
+}
+
+/** POST /auth/invites/preview — unauthenticated; the token IS the credential. */
+export interface InviteTokenRequest {
+  token: string;
+}
+
+/** POST /auth/invites/accept — unauthenticated; returns a token pair. */
+export interface InviteAcceptRequest {
+  token: string;
+  password: string;
+  full_name?: string | null;
+}
+
+/**
+ * An invite from either create endpoint. `link` is present for platform-admin
+ * prospect invites (the caller hands the link over themselves) but omitted for
+ * tenant-admin invites in production, where the email is the proof the invitee
+ * controls the address.
+ */
+export interface Invite {
+  id: string;
+  email: string;
+  kind: string;
+  expires_at: string;
+  link?: string | null;
+}
+
+/** What an invitee is shown before accepting — no credential required. */
+export interface InvitePreview {
+  email: string;
+  full_name: string | null;
+  kind: string;
+  plan_code: string | null;
+  product_name: string;
+  expires_at: string;
+}
+
 export interface InviteUserRequest {
   email: string;
   full_name?: string;

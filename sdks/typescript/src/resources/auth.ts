@@ -11,8 +11,7 @@ import type {
   RegisterIndividualRequest,
   RegisterRequest,
   ResetPasswordRequest,
-  Tokens,
-} from "../types.js";
+  Tokens, InviteAcceptRequest, InvitePreview, InviteTokenRequest } from "../types.js";
 
 export class AuthResource {
   constructor(
@@ -101,6 +100,31 @@ export class AuthResource {
       path: "/api/v1/auth/password/forgot",
       body: req,
       skipAuth: true,
+    });
+  }
+
+  /**
+   * Show an invitee what they are accepting. Unauthenticated: the token IS the
+   * credential, so never log it.
+   */
+  async previewInvite(req: InviteTokenRequest): Promise<InvitePreview> {
+    return this.http.request<InvitePreview>({
+      method: "POST",
+      path: "/api/v1/auth/invites/preview",
+      body: req,
+    });
+  }
+
+  /**
+   * Accept an invite and receive a token pair — this both creates the account
+   * and logs it in, so there is no separate login step after.
+   */
+  async acceptInvite(req: InviteAcceptRequest): Promise<Tokens> {
+    return this.http.request<Tokens>({
+      method: "POST",
+      path: "/api/v1/auth/invites/accept",
+      body: req,
+      idempotent: true,
     });
   }
 

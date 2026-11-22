@@ -1,14 +1,25 @@
 """Lightweight schema migrations runner.
 
-This project bootstraps its initial schema via `Base.metadata.create_all`
-(see deploy runbook). Until full Alembic adoption, schema changes land
-here as idempotent `ALTER TABLE` / `CREATE INDEX IF NOT EXISTS` statements
-and are run on every deploy:
+Run on every deploy:
 
     docker compose exec api python -m scripts.migrate
 
-Each migration must be **idempotent** — running it twice is a no-op.
-List them oldest-first; rerunning the whole file is the deploy command.
+**On an EMPTY database this bootstraps the schema first.** The migrations
+below are `ALTER TABLE` / `CREATE INDEX` statements that assume the tables
+already exist, so on a fresh database they used to fail — which is why
+standing up a new environment needed a dump restored by hand first (it is
+what the AWS cutover had to do). `main()` now checks for the schema and runs
+`Base.metadata.create_all` when it is absent, then applies the migrations as
+usual. On a fresh database it also runs the seed, because a platform with no
+product, plans or root tenant cannot serve a request.
+
+Until full Alembic adoption, schema changes land here as idempotent
+statements. Each migration must be **idempotent** — running it twice is a
+no-op. List them oldest-first; rerunning the whole file is the deploy command.
+
+Note the two paths never overlap: `create_all` builds the CURRENT models, so
+every migration below is already satisfied on a fresh database and runs as a
+no-op. An existing database skips `create_all` and only sees the ALTERs.
 """
 
 from __future__ import annotations
@@ -16,10 +27,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import session_scope
+from app.core.database import engine, session_scope
+
+# Importing app.models registers every mapper with Base.metadata, which is what
+# makes create_all able to build the whole schema.
+from app.models import Base  # noqa: F401  (import for mapper registration)
 
 log = logging.getLogger("migrate")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -380,11 +395,55 @@ async def _run(db: AsyncSession, name: str, sql: str) -> None:
             await db.execute(text(stmt))
 
 
+#: Presence of this table is the test for "has this database been set up?".
+#: `products` is the right probe: every other table hangs off a product, so a
+#: database without it is unusable regardless of what else happens to exist.
+_SENTINEL_TABLE = "products"
+
+
+async def _bootstrap_if_empty() -> bool:
+    """Create the schema when it is absent. Returns True if it did.
+
+    Uses SQLAlchemy's inspector rather than dialect-specific SQL, and
+    `create_all`'s own `checkfirst` means a half-built database gets the
+    missing tables instead of an error.
+    """
+    async with engine.begin() as conn:
+        has_schema = await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).has_table(_SENTINEL_TABLE)
+        )
+        if has_schema:
+            log.info("schema present — skipping bootstrap")
+            return False
+        log.info("empty database — bootstrapping schema with create_all")
+        await conn.run_sync(Base.metadata.create_all)
+    log.info("schema created")
+    return True
+
+
+async def _seed_fresh() -> None:
+    """Seed the platform product / plans / root tenant on a fresh database.
+
+    Only ever called right after a bootstrap. The seed is itself idempotent,
+    but running it on every deploy would be needless work on an environment
+    that is already seeded, and this keeps `migrate` honest about when it
+    writes rows rather than schema.
+    """
+    log.info("fresh database — running seed")
+    from scripts.seed import main as seed_main  # local: avoids an import cycle
+
+    await seed_main()
+    log.info("seed complete")
+
+
 async def main() -> None:
+    bootstrapped = await _bootstrap_if_empty()
     async with session_scope() as db:
         for name, sql in MIGRATIONS:
             await _run(db, name, sql)
     log.info("all migrations applied (%d)", len(MIGRATIONS))
+    if bootstrapped:
+        await _seed_fresh()
 
 
 if __name__ == "__main__":

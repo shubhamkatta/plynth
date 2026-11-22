@@ -295,6 +295,16 @@ app/
   api/pages.py                     hosted invite-accept page (GET /invite)
   services/invite.py               invite create → preview → accept
   providers/notifications.py       email: `log` or Amazon SES (templates inline)
+                                   bounce/complaint: SES account-level
+                                   suppression (BOUNCE + COMPLAINT) is the
+                                   authoritative list — plynth keeps none of
+                                   its own, so the two cannot drift. Sends
+                                   carry SES_CONFIGURATION_SET so bounce and
+                                   complaint events publish to CloudWatch; a
+                                   suppressed recipient raises EmailSuppressed
+                                   (permanent) instead of EmailDeliveryFailed
+                                   (retryable), so known-bad addresses are not
+                                   retried.
   core/
     config.py                      Settings (pydantic-settings)
     logging.py                     structlog → JSON stdout

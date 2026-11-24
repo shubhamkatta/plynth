@@ -435,13 +435,25 @@ async def send_password_reset_email(
     if not app_url:
         log.warning("password_reset.no_app_url", product_id=str(product_id))
         return
-    await notifications.send_email(
-        to=email.lower(), template="password_reset",
-        context={
-            "link": f"{str(app_url).rstrip('/')}/reset?token={raw_token}",
-            "expires_minutes": 60,
-        },
-    )
+    try:
+        await notifications.send_email(
+            to=email.lower(), template="password_reset",
+            context={
+                "link": f"{str(app_url).rstrip('/')}/reset?token={raw_token}",
+                "expires_minutes": 60,
+            },
+        )
+    except notifications.EmailDeliveryFailed as exc:
+        # The route's whole contract is "always 200, never reveal whether the
+        # address exists" — so a delivery failure must not become a 502. It
+        # would break the contract twice over: a normal flow would start
+        # erroring, and the error/success split would tell an attacker which
+        # addresses are deliverable, which is the leak the neutral envelope
+        # exists to prevent. The token is already minted and valid, so a
+        # retry from the user simply works.
+        log.warning(
+            "password_reset.email_not_delivered", error=type(exc).__name__
+        )
 
 
 async def confirm_password_reset(

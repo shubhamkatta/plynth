@@ -15,6 +15,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
+from app.providers import email_templates
 
 log = get_logger(__name__)
 
@@ -40,43 +41,22 @@ class EmailSuppressed(EmailDeliveryFailed):
     sender reputation in the first place.
     """
 
-# template -> (subject, plain-text body). `{placeholders}` come from `context`.
-TEMPLATES: dict[str, tuple[str, str]] = {
-    "invite": (
-        "You're invited to {product_name}",
-        "Hi {name},\n\n{inviter} invited you to {product_name}.\n\n"
-        "Accept your invite and set a password here (valid for {expires_days} days):\n"
-        "{link}\n\nIf you weren't expecting this, you can ignore this email.\n",
-    ),
-    "password_reset": (
-        "Reset your password",
-        "Use this link to reset your password (valid for {expires_minutes} minutes):\n"
-        "{link}\n\nIf you didn't request this, ignore this email.\n",
-    ),
-    "mfa_otp": (
-        "Your verification code",
-        "Your verification code is {code}. It expires in {expires_minutes} minutes.\n",
-    ),
-    "payment_reminder": (
-        "Payment reminder for {tenant}",
-        "Your payment of {amount_cents} {currency} is due {due_at}.\n{hosted_url}\n",
-    ),
-}
+#: Template content lives in ``email_templates`` — subject, text and HTML for
+#: one email stay together there, and HTML cannot be carried by the
+#: ``str.format`` bodies this dict used to hold (a stylesheet is full of braces,
+#: so ``format_map`` either raises or eats the CSS).
+TEMPLATES = email_templates.TEMPLATES
+RenderedEmail = email_templates.RenderedEmail
 
 
-class _SafeDict(dict[str, Any]):
-    def __missing__(self, key: str) -> str:
-        return ""
+def render(template: str, context: dict[str, Any]) -> RenderedEmail:
+    """Return (subject, text, html). Unknown templates raise KeyError
+    (programmer error). Missing context keys fall back to sensible defaults
+    rather than raising — a half-rendered email still beats a 500 on signup."""
+    return TEMPLATES[template](context)
 
 
-def render(template: str, context: dict[str, Any]) -> tuple[str, str]:
-    """Return (subject, body). Unknown templates raise KeyError (programmer error)."""
-    subject, body = TEMPLATES[template]
-    ctx = _SafeDict(context)
-    return subject.format_map(ctx), body.format_map(ctx)
-
-
-def _ses_send(*, to: str, subject: str, body: str) -> None:
+def _ses_send(*, to: str, subject: str, body: str, html: str | None = None) -> None:
     import boto3  # type: ignore[import-untyped]  # lazy: only needed when EMAIL_PROVIDER=ses
 
     kwargs: dict[str, Any] = {"region_name": settings.aws_region}
@@ -90,7 +70,11 @@ def _ses_send(*, to: str, subject: str, body: str) -> None:
         "Content": {
             "Simple": {
                 "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
+                # Both parts, so the text alternative is a real
+                # alternative: plenty of clients and every screen reader use
+                # it, and an HTML-only transactional mail scores worse on spam
+                # filters than one that carries both.
+                "Body": _body(body, html),
             }
         },
     }
@@ -99,6 +83,13 @@ def _ses_send(*, to: str, subject: str, body: str) -> None:
     if settings.ses_configuration_set:
         params["ConfigurationSetName"] = settings.ses_configuration_set
     client.send_email(**params)
+
+
+def _body(text: str, html: str | None) -> dict[str, Any]:
+    parts: dict[str, Any] = {"Text": {"Data": text, "Charset": "UTF-8"}}
+    if html:
+        parts["Html"] = {"Data": html, "Charset": "UTF-8"}
+    return parts
 
 
 def _is_suppressed_recipient(exc: BaseException) -> bool:
@@ -127,9 +118,12 @@ async def send_email(*, to: str, template: str, context: dict[str, Any]) -> None
         return
     if not settings.email_from_address:
         raise EmailDeliveryFailed("EMAIL_FROM_ADDRESS is not configured")
-    subject, body = render(template, context)
+    message = render(template, context)
     try:
-        await asyncio.to_thread(_ses_send, to=to, subject=subject, body=body)
+        await asyncio.to_thread(
+            _ses_send, to=to, subject=message.subject,
+            body=message.text, html=message.html,
+        )
     except Exception as exc:  # boto/botocore raise many types; map to one AppError
         if _is_suppressed_recipient(exc):
             # Distinct log event on purpose: this is the signal that bounce /

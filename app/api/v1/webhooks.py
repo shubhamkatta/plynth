@@ -8,6 +8,13 @@ No `X-Product-Slug` header is required — product is derived from the
 subscription the event refers to (which is looked up via
 `provider_subscription_id`).
 
+Event names are the **provider's own**, not normalised: `parse_webhook`
+returns `body["event"]` for Razorpay and `event["type"]` for Stripe. So the
+`invoice.*` branches below are Stripe/mock dialect and the `subscription.*`
+ones are Razorpay dialect, and both have to live here. Razorpay has no
+`invoice.payment_failed` at all — it expresses the same state as
+`subscription.pending` → `subscription.halted`.
+
 Error handling rules:
 - Signature failure → log warning, return 400. NEVER 500 — providers will
   retry indefinitely and we'll flood the logs.
@@ -101,6 +108,27 @@ async def billing_webhook(
     log.info("webhook.received", provider=provider.name, event_id=event.id, type=event.type)
 
     with bypass_product(), bypass_tenant():
+        # --- Stripe/mock-shaped invoice events -------------------------------
+        #
+        # `invoice.payment_succeeded`, `invoice.paid` and
+        # `invoice.payment_failed` are **Stripe's** event names, and the two
+        # branches below read the Stripe payload shape (`data["subscription"]`
+        # as a flat id string). The mock driver mimics it, which is what the
+        # integration tests and the Postman collection exercise.
+        #
+        # **Razorpay never sends `invoice.payment_failed`** — the API rejects
+        # the name outright (`Invalid event name/names`). Under Razorpay a
+        # failed charge arrives as `subscription.pending` (retrying) and then
+        # `subscription.halted` (retries exhausted); both are handled in
+        # `_SUBSCRIPTION_LIFECYCLE_HANDLERS`. So anyone auditing "do we notice
+        # failed charges?" should read that map, not this branch.
+        #
+        # Kept rather than deleted, deliberately: the Stripe driver is a
+        # supported driver in this repo (`providers/billing/stripe.py`), so
+        # removing the branch would silently drop failed-invoice handling for
+        # any product billing through it. Not gated on `provider.name` either,
+        # because the mock driver — the one the test suite and the Postman
+        # collection use — emits these same names.
         if event.type in ("invoice.payment_succeeded", "invoice.paid"):
             data = event.data
             sub = await db.scalar(
@@ -132,6 +160,8 @@ async def billing_webhook(
                 diff={"event_id": event.id, "provider": provider.name},
             )
 
+        # Stripe/mock only — see the block comment above. Razorpay signals a
+        # failed charge through `subscription.pending` / `.halted`.
         elif event.type == "invoice.payment_failed":
             data = event.data
             sub = await db.scalar(

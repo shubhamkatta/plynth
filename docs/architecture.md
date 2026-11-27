@@ -265,7 +265,7 @@ provider.parse_webhook (verifies signature)
     set_current_product(sub.product_id)
     billing.record_invoice(...)
     billing.handle_payment_failed/succeeded
-    audit(webhook.payment_*)
+    audit(webhook.payment_*)        [Stripe/mock dialect only]
   also (Razorpay): .authenticated → meta.mandate_authorized_at (status stays TRIAL)
                    .pending → PAST_DUE · .halted → GRACE · .cancelled → CANCELLED
                    (a late .charged never revives a CANCELLED sub)
@@ -433,7 +433,7 @@ stable constraint names.
 | `invoices` | `product_id`, `tenant_id`, `subscription_id`, `provider`, `provider_invoice_id`, `status`, `amount_cents`, `attempt_count` | `uq_invoices_provider_id`. |
 | `credit_wallets` | `product_id`, `tenant_id`, `feature_key`, `balance NUMERIC(18,4)`, `period_*` | `uq_credit_wallets_unique`. `SELECT … FOR UPDATE` during consume. |
 | `credit_ledger` | `product_id`, `tenant_id`, `wallet_id`, `entry_type`, `amount` (signed), `balance_after`, `reason`, `reference` | Append-only. `reference` dedupes replays. |
-| `audit_log` | `product_id`, `tenant_id`, `acting_from_tenant_id NULL`, `actor_user_id`, `action`, `resource_*`, `diff JSONB`, `request_id` | `acting_from_tenant_id` set when acting-as. |
+| `audit_log` | `product_id`, `tenant_id NULL`, `acting_from_tenant_id NULL`, `actor_user_id`, `action`, `resource_*`, `diff JSONB`, `request_id` | `acting_from_tenant_id` set when acting-as. **`tenant_id` is nullable on this table only** — a null means *product-scoped, no tenant* (a prospect invite: the invitee gets their own tenant on accept). Not `TenantScopedMixin`, and never read through `TenantRepository`. |
 | `idempotency_keys` | `product_id`, `tenant_id`, `key`, `route`, `request_hash`, `response_status`, `response_body JSONB`, `expires_at` | `uq_idempotency_unique`. |
 
 ### 4.3 Scope enforcement (the heart of safety)
@@ -541,7 +541,19 @@ Audit (`app/services/audit.py`):
 - `audit_action(...)` — async context manager; emits on clean exit,
   logs `action.failed` warning and re-raises on exception (no row).
 - Auto-fills `acting_from_tenant_id` from the ContextVar.
-- No-op if no product/tenant context (falls back to log only).
+- No-op **only** if there is no product context (nothing to scope the row
+  to) — logs `audit.skipped_no_scope` and returns.
+- A missing **tenant** is a legitimate shape, not a skip: the row is written
+  with `tenant_id = NULL`, meaning *product-scoped, no tenant*. The case that
+  matters is a platform-admin prospect invite, which has no tenant at mint
+  time because the invitee gets their own on accept. Skipping on a null tenant
+  previously left the single action that onboards a new customer unaudited.
+- A `NIL` sentinel tenant (platform-admin work on a product with no root
+  tenant) is treated as "no tenant" for the same reason — it would break the
+  FK — and is now recorded rather than dropped.
+- Null-tenant rows are **not** visible in `GET /api/v1/audit`, which filters
+  `tenant_id ==` the caller's effective tenant. They are platform-level and
+  need a platform-scoped reader to surface (not built yet).
 
 ### 4.8 Configuration matrix
 

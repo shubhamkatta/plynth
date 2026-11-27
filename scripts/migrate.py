@@ -381,6 +381,20 @@ MIGRATIONS: list[tuple[str, str]] = [
         CREATE INDEX IF NOT EXISTS ix_invite_tokens_product_id ON invite_tokens (product_id)
         """,
     ),
+    # audit_log.tenant_id becomes nullable. A product-scoped action with no
+    # tenant to attribute to — a prospect invite, whose invitee gets their own
+    # tenant only on accept — could not be recorded at all under NOT NULL, so
+    # `audit.record` skipped it and the single action that onboards a new
+    # customer went unaudited. See models/audit.AuditLog for the full reasoning.
+    #
+    # Forward-only in practice: DROP NOT NULL is instant and safe, but putting
+    # it back would fail once any null-tenant row exists, and deleting rows
+    # from an append-only audit table to satisfy a downgrade is not something
+    # this migration will do.
+    (
+        "0014_audit_log_tenant_nullable",
+        "ALTER TABLE audit_log ALTER COLUMN tenant_id DROP NOT NULL;",
+    ),
 ]
 
 

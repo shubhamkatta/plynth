@@ -29,6 +29,27 @@
 
 `Subscription.has_access` returns True for trial, active, past_due, grace.
 
+### Webhook event names are the provider's own, not normalised
+
+`parse_webhook` returns `event["type"]` for Stripe and `body["event"]` for
+Razorpay, so `app/api/v1/webhooks.py` carries both dialects:
+
+| State | Stripe / mock | Razorpay |
+| --- | --- | --- |
+| charge succeeded | `invoice.payment_succeeded`, `invoice.paid` | `subscription.charged` |
+| charge failed | `invoice.payment_failed` | `subscription.pending` (retrying) → `subscription.halted` (retries exhausted) |
+| mandate authorised | — | `subscription.authenticated` |
+| cancelled | `customer.subscription.deleted` | `subscription.cancelled` |
+
+**Razorpay has no `invoice.payment_failed`** — its API rejects the name
+outright (`Invalid event name/names`). The `invoice.payment_failed` branch in
+the handler is therefore Stripe/mock only; it is kept because the Stripe
+driver is supported and the mock driver (tests, Postman collection) emits the
+same names. Anyone asking "do we notice failed charges under Razorpay?" should
+read `_SUBSCRIPTION_LIFECYCLE_HANDLERS`, not that branch. The transition in
+the diagram above is labelled with the Stripe name for historical reasons; the
+Razorpay path reaches `past_due` / `grace` through the subscription events.
+
 A `trial` that never converts is ended by `task_expire_trials` (see below):
 `trial_end + TRIAL_EXPIRY_BUFFER_DAYS` passed with no `subscription.charged` /
 `activated` webhook → `expired` (access cut). A late charge webhook revives it

@@ -104,6 +104,22 @@ class Settings(BaseSettings):
     #: contain simple inline HTML (`<strong>`). Empty uses a generic set.
     brand_welcome_steps: str = ""
 
+    # --- Catalog seeding -----------------------------------------------------
+    # `scripts/seed_acme.py` provisions a practice product's plan catalog,
+    # component entitlements and credit grants. Which product it targets is
+    # configuration rather than a literal, for the same reason the brand
+    # strings above are: the scaffold ships one generic catalog, and a
+    # deployment that runs it against a real product should not have to fork
+    # the script to name it.
+    #
+    # Mind the blast radius: the seed CREATES the product when the slug is
+    # missing, so a wrong value here provisions a second, parallel product
+    # instead of updating the intended one. Any environment with a real
+    # product should set this explicitly.
+    seed_product_slug: str = "acme-practice"
+    #: Display name, used ONLY when the seed creates the product.
+    seed_product_name: str = "Acme Practice"
+
     # Transactional email. `log` (default) only logs; `ses` sends via Amazon
     # SES. Credentials resolve via the standard AWS chain (instance role / env)
     # unless AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are set explicitly.

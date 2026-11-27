@@ -47,7 +47,8 @@ SYSTEM_PERMISSIONS: list[tuple[str, str]] = [
     # Components (docs/architecture.md § 6.5)
     ("components:read", "List components + per-user effective access"),
     ("components:override", "Enable / disable a component for a specific user"),
-    # Acme (product slug: acme) — AI practice assistant for therapists.
+    # Practice-product permissions (see the `acme-practice` role template
+    # below) — clients, sessions, clinical notes, bookings, inbox, payments.
     # `audit:read` is shared with the platform group above (the catalog is
     # global across products), so it is not repeated here.
     ("client:create", "Create clients"),
@@ -93,7 +94,7 @@ SYSTEM_ROLES: dict[str, list[str]] = {
         "subscriptions:change", "subscriptions:cancel",
         "credits:read", "credits:grant",
         "audit:read",
-        # Acme (and any product with staff): admins manage who works in the
+        # Any product with staff: admins manage who works in the
         # tenant. Deliberately NOT in the practitioner template.
         "staff:manage",
         # Jobs + Storage: admin gets the full surface.
@@ -115,14 +116,28 @@ SYSTEM_ROLES: dict[str, list[str]] = {
     ],
 }
 
-# Extra per-product system-role templates, keyed by product slug. Seeded by
+# Extra per-product system-role templates. Seeded by
 # `ensure_system_roles_for_product` IN ADDITION to SYSTEM_ROLES (which gives
 # every product owner / admin / member). `owner` already grants `*:*`, so a
 # product template only needs its product-specific staff roles.
+#
+# A product selects its template with `Product.settings.rbac.system_roles_template`,
+# falling back to its own slug. The indirection matters: a product's slug is a
+# public identifier chosen for its URLs, while a role template is a shared
+# shape several products may want. Keying only on the slug also meant two
+# products of the same kind had to duplicate the template, and a product could
+# not be renamed without silently losing its staff roles.
+#
+# ⚠️ A template applies to EVERY product that selects it, and
+# `ensure_system_roles_for_product` runs on every registration. Pointing an
+# existing product at a template it did not have before will create those roles
+# in it. Where two generations of a product share a lineage, only the current
+# one should select the template — the older one's users keep the roles they
+# were set up with.
 PRODUCT_SYSTEM_ROLES: dict[str, dict[str, list[str]]] = {
-    # The live Acme product is registered under slug "acme-practice"
-    # (the legacy "acme" product is an earlier Life·Work·Code version whose
-    # users must stay intact — its roles must NOT come from this template).
+    # Example template: a multi-practitioner professional practice (the shape
+    # a clinic, studio or chambers needs). Clinical/record wording is
+    # deliberate — it is what makes the permission split legible.
     "acme-practice": {
         # Everything a therapist needs day-to-day; practice settings stay
         # with the owner.
@@ -202,8 +217,11 @@ async def ensure_system_roles_for_product(
 ) -> None:
     """Per-product system roles (owner / admin / member). Idempotent.
 
-    Products listed in `PRODUCT_SYSTEM_ROLES` (by slug) get their extra
-    role templates seeded on top of the shared owner / admin / member set.
+    A product's extra role template is selected by
+    `Product.settings.rbac.system_roles_template`, falling back to the
+    product's own slug, and is seeded on top of the shared owner / admin /
+    member set. An unknown or absent selection simply means "no extra roles",
+    which is the correct default for a product that has none.
 
     Wraps in `bypass_product` so it works during product bootstrap before
     the request-level product context has been set.
@@ -211,10 +229,21 @@ async def ensure_system_roles_for_product(
     perm_catalog = await ensure_permission_catalog(db)
 
     with bypass_product(), bypass_tenant():
-        slug = await db.scalar(select(Product.slug).where(Product.id == product_id))
+        row = (
+            await db.execute(
+                select(Product.slug, Product.settings).where(Product.id == product_id)
+            )
+        ).first()
+        slug = row[0] if row else None
+        product_settings = (row[1] if row else None) or {}
+        template_key = (
+            (product_settings.get("rbac") or {}).get("system_roles_template")
+            or slug
+            or ""
+        )
         templates: dict[str, list[str]] = {
             **SYSTEM_ROLES,
-            **PRODUCT_SYSTEM_ROLES.get(slug or "", {}),
+            **PRODUCT_SYSTEM_ROLES.get(template_key, {}),
         }
         existing_roles = {
             r.name: r

@@ -1,5 +1,5 @@
 variable "region" {
-  description = "AWS region. Mumbai, matching Acme's REGION=in data-residency rule."
+  description = "AWS region. Mumbai, matching the application's data-residency rule."
   type        = string
   default     = "ap-south-1"
 }
@@ -24,7 +24,7 @@ variable "app_root_gb" {
 }
 
 # PINNED on purpose. A "latest Ubuntu" lookup moves on Canonical's schedule and
-# makes `plan` want to REPLACE the instance (Acme hit exactly this and had to
+# makes `plan` want to REPLACE the instance (the sibling stack hit exactly this and had to
 # pin). The instance also ignores ami/user_data changes (see ec2.tf), so
 # bumping this is a deliberate, reviewed act. Current value read 2026-11-21 from
 #   aws ssm get-parameter --name /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id
@@ -34,11 +34,13 @@ variable "app_ami" {
   default     = "ami-0625bef1ea02ae20c"
 }
 
-# --- Shared RDS (owned by Acme's stack; looked up read-only) --------------
+# --- Shared RDS (owned by the sibling application stack; looked up read-only)
+# No default: the identifier is specific to one AWS account, and a wrong guess
+# would silently look up the wrong database. Set it in `terraform.tfvars`
+# (gitignored) — see `terraform.tfvars.example`.
 variable "rds_identifier" {
-  description = "Identifier of the EXISTING RDS instance plynth shares (Acme's)."
+  description = "Identifier of the EXISTING RDS instance plynth shares."
   type        = string
-  default     = "example-db"
 }
 
 variable "db_name" {

@@ -5,3 +5,7 @@
 !*.tfvars.example
 crash.log
 tfplan
+
+# Backend configuration: the state bucket is an account-specific name supplied
+# at `tofu init -backend-config=backend.hcl`, never committed.
+backend.hcl

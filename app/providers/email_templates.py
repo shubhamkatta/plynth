@@ -1,4 +1,4 @@
-"""Email content: the Acme-themed HTML layout plus one function per template.
+"""Email content: the themed HTML layout plus one function per template.
 
 Why templates are **functions** and not format strings
 ------------------------------------------------------
@@ -11,7 +11,7 @@ where they can be read side by side.
 
 Design
 ------
-Tokens come from ``example-app/docs/DESIGN_SYSTEM.md`` — the **light** column,
+Tokens come from the product design system — the **light** column,
 because an email is read on whatever background the client chooses and light is
 the app's default. Mail clients are not browsers, so:
 
@@ -36,8 +36,16 @@ answer, not a joke.
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
+
+import structlog
+
+from app.core.config import settings
+
+log = structlog.get_logger("email_templates")
 
 # --- tokens (DESIGN_SYSTEM.md, light column) --------------------------------
 BG = "#fafaf9"  # stone-50
@@ -68,6 +76,76 @@ class RenderedEmail(NamedTuple):
     subject: str
     text: str
     html: str
+
+
+#: Brand strings for a rendered email. Resolved once per send in
+#: ``notifications.render`` and merged UNDER the caller's context, so any key
+#: can be overridden per-send — the hook a future per-product branding lookup
+#: uses. Nothing in this module hard-codes a product name: a scaffold that
+#: ships one deployment's brand in its templates cannot be reused without
+#: editing them, and the brand then leaks into every fork of the repo.
+_GENERIC_WELCOME_STEPS: tuple[str, ...] = (
+    "<strong>Finish your profile.</strong> It takes a minute and everything else assumes it.",
+    "<strong>Invite your team.</strong> Anyone who needs access can have it now.",
+    "<strong>Add your first records.</strong> Enough to see the shape of your week.",
+)
+
+
+def brand_context() -> dict[str, Any]:
+    """The configured brand, as render-context keys (see ``Settings.brand_*``)."""
+    name = settings.brand_name or "Acme"
+    steps: tuple[str, ...] | list[str] = _GENERIC_WELCOME_STEPS
+    configured = (settings.brand_welcome_steps or "").strip()
+    if configured:
+        # A leading `[` or `{` means the value was MEANT as JSON. `{` can
+        # never yield a list, so it falls through to the generic set with a
+        # warning rather than being read as a one-item list of raw JSON.
+        if configured[0] in "[{":
+            try:
+                parsed = json.loads(configured)
+                if isinstance(parsed, list):
+                    items = [x for x in parsed if isinstance(x, str) and x.strip()]
+                    if items:
+                        steps = items
+                    else:
+                        log.warning("email.brand_welcome_steps_empty")
+                else:
+                    log.warning("email.brand_welcome_steps_invalid")
+            except ValueError:
+                # Malformed configuration must not cost anyone their welcome email.
+                log.warning("email.brand_welcome_steps_invalid")
+        else:
+            # Pipe-separated is the format to prefer in an env file. A JSON
+            # array has to survive dotenv AND Docker Compose's env_file parser
+            # on the way in, and nested double quotes do not reliably do that —
+            # a mis-parsed value would silently replace the steps with one line
+            # of broken markup. `|` needs no quoting at all.
+            items = [part.strip() for part in configured.split("|") if part.strip()]
+            if items:
+                steps = items
+    return {
+        "brand_name": name,
+        "brand_tagline": settings.brand_tagline,
+        "brand_footer_note": (
+            settings.brand_footer_note
+            # Phrased to avoid "a/an" — the brand name is configuration, and
+            # the article would be wrong for half the possible values.
+            or f"You're getting this because you have an account with {name}."
+        ),
+        "brand_pitch": settings.brand_pitch,
+        "brand_pitch_inside": settings.brand_pitch_inside,
+        "brand_promise": settings.brand_promise,
+        "brand_welcome_steps": list(steps),
+    }
+
+
+def _shell(ctx: Mapping[str, Any]) -> dict[str, str]:
+    """The brand keys ``_layout`` needs, taken from a render context."""
+    return {
+        "brand_name": str(ctx.get("brand_name") or ""),
+        "brand_tagline": str(ctx.get("brand_tagline") or ""),
+        "brand_footer_note": str(ctx.get("brand_footer_note") or ""),
+    }
 
 
 def _esc(value: Any) -> str:
@@ -133,13 +211,32 @@ def _panel(inner_html: str) -> str:
       </table>"""
 
 
-def _layout(*, preheader: str, heading: str, body_html: str, footnote: str = "") -> str:
-    """Wrap content in the Acme shell.
+def _layout(
+    *,
+    preheader: str,
+    heading: str,
+    body_html: str,
+    footnote: str = "",
+    brand_name: str = "",
+    brand_tagline: str = "",
+    brand_footer_note: str = "",
+) -> str:
+    """Wrap content in the product shell.
 
     ``footnote`` is the small print directly under the content (e.g. "if you
     didn't ask for this, ignore it") — kept separate from the standing footer
     so it reads as part of the message rather than boilerplate.
     """
+    brand = brand_name or settings.brand_name or "Acme"
+    _brand = _esc(brand)
+    # The logo is a CSS square with a letter in it, never an image (blocked by
+    # default in most clients), so it follows the brand name rather than a file.
+    _brand_initial = _esc(brand[:1].lower() or "a")
+    _footer_line = _brand + (f" — {_esc(brand_tagline)}" if brand_tagline else "")
+    _footer_note = _esc(
+        brand_footer_note or f"You're getting this because you have an account with {brand}."
+    )
+
     foot = (
         f"""<p style="margin:24px 0 0;font-family:{FONT};font-size:14px;
                       line-height:22px;color:{MUTED};">{footnote}</p>"""
@@ -192,9 +289,9 @@ def _layout(*, preheader: str, heading: str, body_html: str, footnote: str = "")
                       bgcolor="{LOGO_BG}"
                       style="width:36px;height:36px;border-radius:10px;
                              font-family:{FONT};font-size:22px;font-weight:700;
-                             color:{LOGO_FG};text-align:center;line-height:36px;">m</td>
+                             color:{LOGO_FG};text-align:center;line-height:36px;">{_brand_initial}</td>
                   <td style="padding-left:10px;font-family:{FONT};font-size:17px;
-                             font-weight:600;color:{TEXT};" class="mv-text">Acme</td>
+                             font-weight:600;color:{TEXT};" class="mv-text">{_brand}</td>
                 </tr>
               </table>
             </td>
@@ -218,8 +315,8 @@ def _layout(*, preheader: str, heading: str, body_html: str, footnote: str = "")
             <td style="padding:24px 8px 0;">
               <p class="mv-muted" style="margin:0;font-family:{FONT};font-size:13px;
                         line-height:20px;color:{MUTED};">
-                Acme — the front desk your practice never had.<br>
-                You're getting this because you have a Acme account.
+                {_footer_line}<br>
+                {_footer_note}
               </p>
             </td>
           </tr>
@@ -245,8 +342,13 @@ def _p(text_html: str, *, muted: bool = False) -> str:
 
 
 def _invite(ctx: Mapping[str, Any]) -> RenderedEmail:
-    product = _esc(ctx.get("product_name") or "Acme")
+    product = _esc(ctx.get("product_name") or ctx.get("brand_name") or "Acme")
     inviter = _esc(ctx.get("inviter") or "Someone")
+    # Optional one-liners on what the product does. Empty omits them rather
+    # than printing a blank paragraph — an unbranded deployment still sends a
+    # complete, sensible invite.
+    pitch = str(ctx.get("brand_pitch") or "")
+    pitch_inside = str(ctx.get("brand_pitch_inside") or "")
     link = str(ctx.get("link") or "")
     days = ctx.get("expires_days") or 7
     name = ctx.get("name")
@@ -255,37 +357,35 @@ def _invite(ctx: Mapping[str, Any]) -> RenderedEmail:
         f"{_greeting(name)}\n\n"
         f"{inviter} set up a {product} account for you.\n\n"
         f"Pick a password and you're in — the link works for {days} days:\n{link}\n\n"
-        "Acme answers your messages, books your sessions and chases your payments, "
-        "so you can spend your day with clients instead of your inbox.\n\n"
-        "Not expecting this? You can ignore this email and nothing will happen.\n"
+        + (f"{pitch}\n\n" if pitch else "")
+        + "Not expecting this? You can ignore this email and nothing will happen.\n"
     )
     html = _layout(
         preheader=f"{inviter} set up a {product} account for you — pick a password and you're in.",
-        heading="Your practice just got a front desk",
+        heading=f"You're invited to {product}",
         body_html=(
             _p(f"{_greeting(name)}")
             + _p(f"<strong>{inviter}</strong> set up a {product} account for you.")
             + _p("Pick a password and you're in. Takes about a minute.")
             + _button("Set my password", link)
-            + _p(
-                "Once you're in, Acme starts answering messages, booking sessions and "
-                "chasing payments — so your day goes to your clients, not your inbox.",
-                muted=True,
-            )
+            + (_p(_esc(pitch_inside), muted=True) if pitch_inside else "")
         ),
         footnote=(
             f"This link works for {days} days. "
             "Not expecting it? Ignore this email and nothing happens."
         ),
+        **_shell(ctx),
     )
     return RenderedEmail(f"{inviter} invited you to {product}", text, html)
 
 
 def _welcome(ctx: Mapping[str, Any]) -> RenderedEmail:
     name = ctx.get("name")
-    product = _esc(ctx.get("product_name") or "Acme")
+    product = _esc(ctx.get("product_name") or ctx.get("brand_name") or "Acme")
     link = str(ctx.get("link") or ctx.get("app_url") or "")
 
+    raw_steps = ctx.get("brand_welcome_steps") or list(_GENERIC_WELCOME_STEPS)
+    step_list = [str(x) for x in raw_steps if str(x).strip()]
     steps = "".join(
         f"""<tr>
               <td width="28" valign="top" style="font-family:{MONO};font-size:14px;
@@ -293,26 +393,22 @@ def _welcome(ctx: Mapping[str, Any]) -> RenderedEmail:
               <td class="mv-text" valign="top" style="font-family:{FONT};font-size:15px;
                   line-height:24px;color:{TEXT};padding:0 0 14px;">{s}</td>
             </tr>"""
-        for i, s in enumerate(
-            (
-                "<strong>Add your hours.</strong> Acme only offers slots you'd actually say yes to.",
-                "<strong>Connect WhatsApp.</strong> Your number keeps working on your phone — "
-                "Acme just stops letting messages sit unanswered.",
-                "<strong>Add a client or two.</strong> Enough to see your week take shape.",
-            ),
-            start=1,
-        )
+        for i, s in enumerate(step_list, start=1)
     )
+    # Inline tags are intentional in the configured steps (``<strong>``), so the
+    # plain-text part strips them rather than escaping them into visible markup.
+    plain_steps = "\n".join(
+        f"  {i}. {re.sub(r'<[^>]+>', '', s)}" for i, s in enumerate(step_list, start=1)
+    )
+    promise = str(ctx.get("brand_promise") or "")
 
     text = (
         f"{_greeting(name)}\n\n"
         f"Welcome to {product} — your account is ready.\n\n"
-        "Three things make the difference on day one:\n"
-        "  1. Add your hours — Acme only offers slots you'd say yes to.\n"
-        "  2. Connect WhatsApp — your number keeps working on your phone.\n"
-        "  3. Add a client or two — enough to see your week take shape.\n\n"
+        "A few things make the difference on day one:\n"
+        f"{plain_steps}\n\n"
         f"Start here: {link}\n\n"
-        "Nothing goes out to a client without you saying so. Acme drafts; you decide.\n"
+        + (f"{promise}\n" if promise else "")
     )
     html = _layout(
         preheader="Your account is ready. Three things make the difference on day one.",
@@ -324,14 +420,11 @@ def _welcome(ctx: Mapping[str, Any]) -> RenderedEmail:
                 f'<table role="presentation" width="100%" cellpadding="0" '
                 f'cellspacing="0" border="0">{steps}</table>'
             )
-            + _button("Set up my practice", link)
-            + _p(
-                "One promise worth knowing up front: nothing reaches a client without you "
-                "saying so. Acme drafts, you decide.",
-                muted=True,
-            )
+            + _button("Get started", link)
+            + (_p(_esc(promise), muted=True) if promise else "")
         ),
         footnote="Stuck on something? Reply to this email — a human reads it.",
+        **_shell(ctx),
     )
     return RenderedEmail(f"Welcome to {product} — let's get you set up", text, html)
 
@@ -339,22 +432,23 @@ def _welcome(ctx: Mapping[str, Any]) -> RenderedEmail:
 def _onboarding_complete(ctx: Mapping[str, Any]) -> RenderedEmail:
     name = ctx.get("name")
     practice = _esc(ctx.get("practice_name") or "your practice")
+    product = _esc(ctx.get("product_name") or ctx.get("brand_name") or "Acme")
     link = str(ctx.get("link") or ctx.get("app_url") or "")
 
     text = (
         f"{_greeting(name)}\n\n"
-        f"{practice} is live on Acme. You're set up.\n\n"
+        f"{practice} is live on {product}. You're set up.\n\n"
         "From here on: messages get answered, sessions get booked, reminders go out "
         "before each session, and anything urgent comes straight to you.\n\n"
         "Nothing is on autopilot that you didn't switch on yourself.\n\n"
         f"Your dashboard: {link}\n"
     )
     html = _layout(
-        preheader=f"{practice} is live on Acme. Here's what happens from here.",
+        preheader=f"{practice} is live on {product}. Here's what happens from here.",
         heading="You're all set ✨",
         body_html=(
             _p(f"{_greeting(name)}")
-            + _p(f"<strong>{practice}</strong> is live on Acme.")
+            + _p(f"<strong>{practice}</strong> is live on {product}.")
             + _p("From here on, without you lifting a finger:")
             + _panel(
                 _p("💬 &nbsp;Messages get answered — drafts wait for your yes.")
@@ -376,8 +470,9 @@ def _onboarding_complete(ctx: Mapping[str, Any]) -> RenderedEmail:
                 muted=True,
             )
         ),
+        **_shell(ctx),
     )
-    return RenderedEmail(f"{practice} is live on Acme", text, html)
+    return RenderedEmail(f"{practice} is live on {product}", text, html)
 
 
 def _password_reset(ctx: Mapping[str, Any]) -> RenderedEmail:
@@ -408,6 +503,7 @@ def _password_reset(ctx: Mapping[str, Any]) -> RenderedEmail:
             "Didn't ask for this? Ignore this email and your password stays exactly as it is. "
             "Nobody can get in with this link alone."
         ),
+        **_shell(ctx),
     )
     return RenderedEmail("Set a new password", text, html)
 
@@ -417,7 +513,7 @@ def _mfa_otp(ctx: Mapping[str, Any]) -> RenderedEmail:
     minutes = ctx.get("expires_minutes") or 5
 
     text = (
-        f"Your Acme verification code is {code}\n\n"
+        f"Your {_esc(ctx.get('brand_name') or settings.brand_name or 'Acme')} verification code is {code}\n\n"
         f"It expires in {minutes} minutes.\n\n"
         "If you weren't signing in just now, someone has your password — "
         "change it as soon as you can.\n"
@@ -438,8 +534,13 @@ def _mfa_otp(ctx: Mapping[str, Any]) -> RenderedEmail:
             "Weren't signing in just now? Someone else has your password — "
             "please change it as soon as you can."
         ),
+        **_shell(ctx),
     )
-    return RenderedEmail("Your Acme verification code", text, html)
+    return RenderedEmail(
+        f"Your {ctx.get('brand_name') or settings.brand_name or 'Acme'} verification code",
+        text,
+        html,
+    )
 
 
 def _payment_reminder(ctx: Mapping[str, Any]) -> RenderedEmail:
@@ -478,6 +579,7 @@ def _payment_reminder(ctx: Mapping[str, Any]) -> RenderedEmail:
             + _button("Pay now", url)
             + _p("Already paid? Then this crossed in the post — ignore it.", muted=True)
         ),
+        **_shell(ctx),
     )
     return RenderedEmail(f"Payment reminder for {tenant}", text, html)
 

@@ -52,8 +52,15 @@ RenderedEmail = email_templates.RenderedEmail
 def render(template: str, context: dict[str, Any]) -> RenderedEmail:
     """Return (subject, text, html). Unknown templates raise KeyError
     (programmer error). Missing context keys fall back to sensible defaults
-    rather than raising — a half-rendered email still beats a 500 on signup."""
-    return TEMPLATES[template](context)
+    rather than raising — a half-rendered email still beats a 500 on signup.
+
+    The configured brand (`Settings.brand_*`) is merged in UNDERNEATH the
+    caller's context, so a caller can override any brand key per-send. This is
+    the one funnel every email passes through, which is why branding is
+    resolved here rather than in six template functions — and why no template
+    hard-codes a product name.
+    """
+    return TEMPLATES[template]({**email_templates.brand_context(), **context})
 
 
 def _ses_send(*, to: str, subject: str, body: str, html: str | None = None) -> None:

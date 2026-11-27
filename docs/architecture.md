@@ -569,6 +569,10 @@ from env vars / `.env`. Important keys:
 | `JWT_REFRESH_TTL_SECONDS` | refresh-token lifetime | 2,592,000 (30 d) |
 | `PASSWORD_MIN_LENGTH` | enforced server-side | 12 |
 | `BILLING_PROVIDER` | `stripe` \| `mock` | `mock` |
+| `BRAND_NAME` | Product name in every transactional email | `Acme` |
+| `BRAND_TAGLINE` / `BRAND_FOOTER_NOTE` | Email footer line + "why am I getting this" | — |
+| `BRAND_PITCH` / `BRAND_PITCH_INSIDE` / `BRAND_PROMISE` | Optional one-liners in the invite and welcome; empty omits them | — |
+| `BRAND_WELCOME_STEPS` | Welcome email day-one steps, JSON array of strings | generic set |
 | `STRIPE_API_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe driver | — |
 | `DEFAULT_TRIAL_DAYS` / `GRACE_PERIOD_DAYS` | lifecycle | 14 / 7 |
 | `INVITE_TTL_DAYS` | invite-token lifetime | 7 |

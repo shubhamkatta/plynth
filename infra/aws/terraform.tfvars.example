@@ -1,0 +1,13 @@
+# Copy to `terraform.tfvars` (gitignored) and fill in for your account.
+#
+# Only values that are specific to ONE account live here. Everything with a
+# sensible default stays in `variables.tf`, so this file is short on purpose.
+
+# Identifier of the existing RDS instance plynth shares with the sibling
+# application stack. Required — there is no default, because looking up the
+# wrong database is worse than failing to plan.
+rds_identifier = "example-db"
+
+# The hostname Caddy serves plynth on, and the verified SES sender.
+# api_hostname     = "api.example.com"
+# ses_from_address = "no-reply@example.com"

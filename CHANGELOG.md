@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Outbound-email branding is configuration (`BRAND_NAME`, `BRAND_TAGLINE`,
+  `BRAND_FOOTER_NOTE`, `BRAND_PITCH`, `BRAND_PITCH_INSIDE`, `BRAND_PROMISE`,
+  `BRAND_WELCOME_STEPS`), resolved once in `providers.notifications.render` and
+  overridable per-send through the render context. The templates no longer
+  contain any product's name or copy; unset, the defaults send correct
+  unbranded transactional mail.
+- `Product.settings.rbac.system_roles_template` selects a product's extra
+  system-role template, falling back to the product slug.
+
 - Welcome email on registration (`auth._send_welcome_email`), covering both
   `register` and `register_individual`. Best-effort: a delivery failure can
   never fail a registration, since the account and its trial already exist by
@@ -16,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The example product is now `acme` / `acme-practice` throughout.** This is a
+  product-agnostic platform scaffold; it previously carried one deployment's
+  name, domains, AWS resource identifiers and marketing copy in its code,
+  tests, docs, seed script and Terraform. Renamed: `scripts/seed_acme.py`,
+  `tests/integration/test_acme_{catalog,roles}.py`, and the
+  `PRODUCT_SYSTEM_ROLES` key.
+- `infra/aws` no longer commits account-specific values. The S3 backend is a
+  **partial configuration** (`tofu init -backend-config=backend.hcl`) because a
+  backend block cannot interpolate variables, and `rds_identifier` has no
+  default — looking up the wrong database is worse than failing to plan. See
+  `infra/aws/terraform.tfvars.example`.
 - `audit_log.tenant_id` is now **nullable**, and `audit.record` skips a row
   only when there is no *product* context. A product-scoped action with no
   tenant — a platform-admin prospect invite, whose invitee gets their own

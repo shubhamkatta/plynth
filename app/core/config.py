@@ -73,6 +73,37 @@ class Settings(BaseSettings):
     # `settings.app_url`.
     public_base_url: str = "https://api.example.com"
 
+    # --- Outbound-email branding ---------------------------------------------
+    # Every brand string in a transactional email comes from here, injected
+    # once in `providers.notifications.render`. They are settings rather than
+    # literals because this is a multi-product platform: the scaffold must not
+    # ship one product's name, tagline or marketing copy in its templates, and
+    # a deployment that does have a brand should not have to fork the template
+    # module to say so.
+    #
+    # The defaults are deliberately plain, not placeholders-to-be-replaced: an
+    # unconfigured deployment sends correct, unbranded transactional mail. Each
+    # value can also be overridden per-send through the render context, which
+    # is the hook a future per-product branding lookup uses.
+    brand_name: str = "Acme"
+    #: Appears after the product name in the footer ("Acme — <tagline>").
+    #: Empty renders the name alone.
+    brand_tagline: str = ""
+    #: Why the recipient is getting this. Empty falls back to
+    #: "You're getting this because you have an <brand_name> account."
+    brand_footer_note: str = ""
+    #: One sentence on what the product does, used in the invite. Empty omits
+    #: the sentence rather than printing an empty paragraph.
+    brand_pitch: str = ""
+    #: The same idea in the second person, for the invite's "once you're in".
+    brand_pitch_inside: str = ""
+    #: A promise worth making up front (e.g. a consent or safety guarantee),
+    #: shown in the welcome. Empty omits it.
+    brand_promise: str = ""
+    #: The welcome email's day-one steps, as a JSON array of strings. Each may
+    #: contain simple inline HTML (`<strong>`). Empty uses a generic set.
+    brand_welcome_steps: str = ""
+
     # Transactional email. `log` (default) only logs; `ses` sends via Amazon
     # SES. Credentials resolve via the standard AWS chain (instance role / env)
     # unless AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY are set explicitly.

@@ -45,6 +45,28 @@ users get 403s. Newer codes: `dashboard:read`, `analytics:read`, `alert:read`,
 Role grants are **additive on re-seed** (`ensure_system_roles_for_product`): new
 codes reach existing roles when `scripts.seed_acme` runs; nothing is revoked.
 
+### How a product selects its template
+
+The roles above are the `acme-practice` entry in
+`rbac.PRODUCT_SYSTEM_ROLES` — a template for a multi-practitioner professional
+practice. A product chooses one with
+
+```
+products.settings.rbac.system_roles_template = "acme-practice"
+```
+
+falling back to the product's own **slug** when that key is absent, so products
+created before the key keep their roles with no migration.
+
+Two reasons the indirection exists rather than keying on the slug alone: a slug
+is a public identifier chosen for URLs while a template is a shape several
+products may share, and a product could not be renamed without silently losing
+its staff roles. ⚠️ `ensure_system_roles_for_product` runs on **every
+registration**, so a template that stops resolving does not fail loudly — new
+users simply arrive with only `owner` / `admin` / `member`. Pointing an existing
+product at a template it did not have before will likewise create those roles
+in it on the next registration.
+
 Custom tenant-scoped roles can be created via `POST /roles` with any subset of
 existing permissions.
 

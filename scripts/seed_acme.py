@@ -196,7 +196,13 @@ PLANS: list[dict] = [
         "description": "Multi-practitioner clinic tier with admin roles and unlimited AI. Custom pricing.",
         "price_cents": 0,          # custom / enterprise — priced per deal
         "interval": BillingInterval.MONTH,
-        "trial_days": 0,
+        # 30, not 0, even though this tier is $0 today: at price_cents=0
+        # `start_trial` takes the free branch and never reads trial_days, so
+        # this is inert. It stops being inert the day the tier gets a real
+        # price — and a 0 here would then fall through to the GLOBAL
+        # settings.default_trial_days (14), charging on day 15 against a
+        # 30-day promise. Keep it in step with the paid plans above.
+        "trial_days": 30,
         "is_public": False,        # not shown in the public /plans list
         # No ai_messages grant — Clinic relies on the `unlimited_ai`
         # component and Acme skips credit consumption entirely.
@@ -209,7 +215,13 @@ PLANS: list[dict] = [
         "description": "Early-access / internal beta — every feature enabled, unlimited AI.",
         "price_cents": 0,
         "interval": BillingInterval.MONTH,
-        "trial_days": 0,
+        # 30, not 0, even though this tier is $0 today: at price_cents=0
+        # `start_trial` takes the free branch and never reads trial_days, so
+        # this is inert. It stops being inert the day the tier gets a real
+        # price — and a 0 here would then fall through to the GLOBAL
+        # settings.default_trial_days (14), charging on day 15 against a
+        # 30-day promise. Keep it in step with the paid plans above.
+        "trial_days": 30,
         "is_public": False,        # not shown in the public /plans list
         # Unlimited AI via the `unlimited_ai` component (below) — no quota.
         "ai_messages": None,

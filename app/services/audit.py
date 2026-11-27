@@ -10,8 +10,13 @@ Call from every state-changing service path. Two entry points:
   must not look successful in the log).
 
 `product_id` is required (falls back to `current_product_id()`). Without
-a product context the call is logged but not persisted — a platform-level
-event with no product to scope to.
+a product context the call is logged but not persisted — there would be
+nothing to scope the row to.
+
+`tenant_id` is **optional**. A product-scoped action with no tenant (a
+prospect invite, whose invitee gets their own tenant only on accept) is
+recorded with a null tenant rather than dropped. See `models/audit.AuditLog`
+for why that column is nullable on this one table.
 """
 
 from collections.abc import AsyncIterator
@@ -65,15 +70,23 @@ async def record(
     # a NIL sentinel tenant_id from get_current_user. We must not write
     # that into audit_log.tenant_id — the FK to `tenants` would fail and
     # the IntegrityError handler would surface a misleading 409 to the
-    # caller. Treat NIL as "no tenant scope" and skip the audit entry.
+    # caller. Treat NIL as "no tenant scope".
     if tid == NIL:
         tid = None
-    if tid is None or pid is None:
+    # A missing PRODUCT is the only thing that makes a row unwritable: there
+    # would be nothing to scope it to at all. A missing TENANT is a legitimate
+    # shape — a product-scoped action with no tenant to attribute to, of which
+    # a prospect invite is the important case: the invitee gets their own
+    # tenant on accept, so at mint time there is none. This used to skip on
+    # either, which left the single action that onboards a new customer
+    # unaudited in the system that owns identity (`audit_log.tenant_id` is
+    # nullable for exactly this reason — see `models/audit.AuditLog`).
+    if pid is None:
         log.info(
             "audit.skipped_no_scope", action=action,
             resource_type=resource_type,
             resource_id=str(resource_id) if resource_id else None,
-            has_tenant=tid is not None, has_product=pid is not None,
+            has_tenant=tid is not None, has_product=False,
         )
         return
 
@@ -105,7 +118,7 @@ async def record(
         actor_user_id=str(actor_user_id) if actor_user_id else None,
         resource_type=resource_type,
         resource_id=str(resource_id) if resource_id else None,
-        product_id=str(pid), tenant_id=str(tid),
+        product_id=str(pid), tenant_id=str(tid) if tid else None,
         acting_from_tenant_id=str(acting_from) if acting_from else None,
     )
 

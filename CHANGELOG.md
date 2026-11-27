@@ -9,13 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Welcome email on registration (`auth._send_welcome_email`), covering both
+  `register` and `register_individual`. Best-effort: a delivery failure can
+  never fail a registration, since the account and its trial already exist by
+  then. The template body already existed and was simply never called.
+
 ### Changed
+
+- `audit_log.tenant_id` is now **nullable**, and `audit.record` skips a row
+  only when there is no *product* context. A product-scoped action with no
+  tenant — a platform-admin prospect invite, whose invitee gets their own
+  tenant on accept — is recorded with a null tenant instead of being dropped.
+  Migration `0014_audit_log_tenant_nullable` (forward-only in practice).
+  `AuditLog` no longer uses `TenantScopedMixin`.
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+- Prospect invites wrote no audit row at all: the single action that onboards
+  a new customer was unaudited in the system that owns identity.
 
 ### Security
 

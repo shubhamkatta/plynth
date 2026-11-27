@@ -64,6 +64,50 @@ async def _audit_in_new_tx(**kwargs: Any) -> None:
         await audit.record(tx, **kwargs)
 
 
+async def _send_welcome_email(
+    db: AsyncSession, *, product_id: UUID, email: str, full_name: str | None
+) -> None:
+    """Best-effort welcome mail after a successful registration.
+
+    **This can never fail a registration.** The account already exists and the
+    trial has already started by the time this runs; a mail provider outage
+    turning that into a 502 would mean the caller believes signup failed while
+    it actually succeeded — the worst possible outcome, because retrying then
+    hits "user already exists". Same reasoning as the password-reset caller,
+    which swallows `EmailDeliveryFailed` for its own (different) reason.
+
+    `EmailSuppressed` subclasses `EmailDeliveryFailed`, so one except covers
+    both: an address on the suppression list after an earlier bounce is still
+    not a reason to refuse someone an account.
+
+    The body already existed (`providers/email_templates._welcome`, registered
+    in `TEMPLATES`) — nothing ever called it. Signup therefore never depended
+    on email and was not broken; this is the missing nicety, not a bug fix.
+    """
+    # Local import, matching the password-reset caller below: the providers
+    # package is imported at call time so tests can patch the module attribute
+    # and so services/providers stay decoupled at import.
+    from app.providers import notifications
+
+    with bypass_product(), bypass_tenant():
+        product = await db.get(Product, product_id)
+    product_name = product.name if product else None
+    app_url = ((product.settings if product else None) or {}).get("app_url")
+    link = str(app_url).rstrip("/") if app_url else settings.public_base_url.rstrip("/")
+    try:
+        await notifications.send_email(
+            to=email.lower(),
+            template="welcome",
+            context={
+                "name": full_name or email,
+                "product_name": product_name,
+                "link": link,
+            },
+        )
+    except notifications.EmailDeliveryFailed as exc:
+        log.warning("register.welcome_email_not_delivered", error=type(exc).__name__)
+
+
 async def register(
     db: AsyncSession,
     *,
@@ -105,6 +149,11 @@ async def register(
         resource_type="user",
         resource_id=user.id,
         diff={"email": email, "tenant_type": tenant_type.value},
+    )
+    # Last, and never fatal: see `_send_welcome_email`. Covers both B2B
+    # register and B2C `register_individual`, which routes through here.
+    await _send_welcome_email(
+        db, product_id=product_id, email=email, full_name=full_name
     )
     return user, tenant
 

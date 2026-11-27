@@ -403,6 +403,11 @@ app/
 migrations/                        Alembic (env.py, versions/)
 scripts/
   seed.py                          default product + plans + admin (idempotent)
+  seed_acme.py                     practice-product catalog: plans, component
+                                   entitlements, credit grants (idempotent).
+                                   Target product from SEED_PRODUCT_SLUG /
+                                   SEED_PRODUCT_NAME, resolved per call by
+                                   `target_product()` — never a literal.
 
 tests/
   unit/
@@ -584,6 +589,8 @@ from env vars / `.env`. Important keys:
 | `RATE_LIMIT_PER_MINUTE` | per IP / per path | 120 |
 | `PLATFORM_ADMIN_TOKEN` | shared secret for `/admin/*` | unset → 403 |
 | `CORS_ORIGINS` | list[str] of allowed origins | `[]` |
+| `SEED_PRODUCT_SLUG` | product that `scripts/seed_acme.py` provisions. **Load-bearing:** an unmatched slug makes the seed CREATE a parallel product rather than update the intended one | `acme-practice` |
+| `SEED_PRODUCT_NAME` | display name, used only if the seed creates the product | `Acme Practice` |
 
 Per-product config (`Product.settings JSONB`):
 - `features.allow_parent_child_access` (bool, default `true`)

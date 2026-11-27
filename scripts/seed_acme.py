@@ -9,8 +9,12 @@ app reads via:
 - ``GET /subscription`` → ``plan_code`` (the tenant's tier)
 - ``GET /credits/wallets`` → the ``ai_messages`` quota wallet
 
-Idempotent: re-runs are safe. Requires the ``acme`` product to already
-exist (created via ``POST /admin/products`` with slug ``acme``).
+Idempotent: re-runs are safe.
+
+Which product it targets comes from configuration, not from this file --
+``SEED_PRODUCT_SLUG`` (default ``acme-practice``) and ``SEED_PRODUCT_NAME``.
+See ``target_product``; the slug is load-bearing, because an unknown slug
+makes this script CREATE a product rather than update one.
 
 Run against the running stack:
 
@@ -28,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import session_scope
 from app.core.logging import configure_logging, get_logger
 from app.core.tenant import (
@@ -48,7 +53,20 @@ from app.services import rbac
 
 log = get_logger("seed_acme")
 
-PRODUCT_SLUG = "acme-practice"
+def target_product() -> tuple[str, str]:
+    """The product this seed provisions: ``(slug, display_name)``.
+
+    Read at call time rather than bound at import so a one-off run or a test
+    can redirect the seed through the environment (``SEED_PRODUCT_SLUG`` /
+    ``SEED_PRODUCT_NAME``) without editing this file.
+
+    The default targets the scaffold's own ``acme-practice``. A deployment
+    that hosts a real product MUST set the slug: `main` creates the product
+    when the slug is not found, so running with the default against a live
+    database provisions a second, parallel product — a full catalog bound to
+    the real provider price ids — instead of updating the intended one.
+    """
+    return settings.seed_product_slug, settings.seed_product_name
 
 # The dev/demo tenant that Acme's gate0 / DEV tenant maps to.
 DEV_TENANT_SLUG = "test-practice"
@@ -482,23 +500,34 @@ async def main() -> None:
     configure_logging()
     async with session_scope() as db:
         with bypass_product(), bypass_tenant():
+            product_slug, product_name = target_product()
+            log.info("seed_acme.target", slug=product_slug)
             product = await db.scalar(
-                select(Product).where(Product.slug == PRODUCT_SLUG)
+                select(Product).where(Product.slug == product_slug)
             )
             if product is None:
-                # Self-contained bootstrap: the acme-practice product is the
+                # Self-contained bootstrap: the practice product is the
                 # therapist front-desk product, kept SEPARATE from the legacy
-                # 'acme' product (whose old users must stay intact). Create it
-                # so this seed sets up a greenfield environment in one run.
+                # product (whose old users must stay intact). Create it so this
+                # seed sets up a greenfield environment in one run.
+                #
+                # WARNING, not info: on a greenfield environment this is the
+                # happy path, but anywhere else it means the configured slug
+                # does not match any existing product and a parallel one is
+                # being created. That is the expensive mistake this seed can
+                # make, so it should be loud in the logs either way.
                 product = Product(
-                    name="Acme Practice",
-                    slug=PRODUCT_SLUG,
+                    name=product_name,
+                    slug=product_slug,
                     status=ProductStatus.ACTIVE,
                     is_active=True,
                 )
                 db.add(product)
                 await db.flush()
-                log.info("seed_acme.product_created", slug=PRODUCT_SLUG)
+                log.warning(
+                    "seed_acme.product_created", slug=product_slug, name=product_name,
+                    note="no product had this slug; created one (expected only on a greenfield environment)",
+                )
             # ALWAYS (idempotently) ensure system roles — not only on first
             # creation. Re-running this seed against an ALREADY-EXISTING product
             # is how newly-added roles (e.g. 'patient') reach production.
